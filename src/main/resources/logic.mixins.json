@@ -1,0 +1,26 @@
+{
+	"required": true,
+	"package": "dev.technix.logic.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"ExampleMixin"
+	],
+	"client": [
+		"TimerMixin",
+		"FontMixin",
+		"KeyboardHandlerMixin",
+		"MouseHandlerMixin",
+        "GameRendererMixin",
+        "MinecraftUseMixin",
+        "AttackMixin",
+        "IncomingPacketMixin",
+        "AvatarNametagMixin",
+        "OutgoingPacketMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

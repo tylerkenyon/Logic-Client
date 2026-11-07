@@ -1,0 +1,118 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+repositories {
+	mavenCentral()
+	flatDir { dirs 'libs' }
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation 'dev.technix:mica:0.2'
+	include 'dev.technix:mica:0.2'
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	 
+	implementation "io.github.spair:imgui-java-binding:${project.imgui_version}"
+}
+
+loom {
+	runs {
+		client {
+			programArg "--graphicsBackend"
+			programArg "vulkan"
+		}
+	}
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+	filesMatching("assets/logic/version.txt") {
+		expand "version": version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+tasks.register('verifyLogic', JavaExec) {
+	group = 'verification'
+	description = 'Checks settings, aiming math, attack cooldown and ESP projection.'
+	dependsOn tasks.named('testClasses')
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'dev.technix.logic.LogicChecks'
+}
+
+tasks.named('check') {
+	dependsOn tasks.named('verifyLogic')
+	dependsOn tasks.named('verifyInjection')
+	dependsOn tasks.named('verifyConfig')
+	dependsOn tasks.named('verifyRuntime')
+}
+
+tasks.register('verifyRuntime', JavaExec) {
+	group = 'verification'
+	description = 'Checks isolated client reload, hook detachment and payload JAR closure.'
+	dependsOn tasks.named('testClasses')
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'dev.technix.logic.RuntimeChecks'
+}
+
+tasks.register('verifyConfig', JavaExec) {
+	group = 'verification'
+	description = 'Checks config persistence, validation, theme tokens and panel layouts.'
+	dependsOn tasks.named('testClasses')
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'dev.technix.logic.ConfigChecks'
+}
+
+tasks.register('verifyInjection', JavaExec) {
+	group = 'verification'
+	description = 'Verifies live injection transformations against Minecraft 26.2 bytecode.'
+	dependsOn tasks.named('testClasses')
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'dev.technix.logic.InjectionChecks'
+}
+
+tasks.named('test') {
+	 
+	failOnNoDiscoveredTests = false
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	repositories {
+
+	}
+
+}
