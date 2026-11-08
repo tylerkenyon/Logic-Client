@@ -37,7 +37,7 @@ needed for the capture-excluded Mica overlay; exclusive fullscreen hides it.
 
 ## Fabric mod mode
 
-Install `logic-0.1.0.jar` in the mods directory with Fabric API. Mica and its
+Install the versioned `logic` jar in the mods directory with Fabric API. Mica and its
 libraries are nested inside the mod jar: do not install a second Mica copy.
 The separate `mica-0.2.jar` is included for standalone use, not required by Logic.
 The injectable payload jar is not the Fabric mod jar.
