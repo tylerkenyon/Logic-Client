@@ -20,8 +20,9 @@ public final class NameMask {
     private final Pattern pattern;
 
     public NameMask(Map<String, String> names) {
-        this.names = Map.copyOf(names);
-        String alternatives = names.keySet().stream().sorted(Comparator.comparingInt(String::length).reversed())
+        this.names = names.entrySet().stream().filter(entry -> !entry.getKey().isBlank())
+            .collect(java.util.stream.Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
+        String alternatives = this.names.keySet().stream().sorted(Comparator.comparingInt(String::length).reversed())
             .map(Pattern::quote).collect(java.util.stream.Collectors.joining("|"));
         pattern = Pattern.compile("(?<![A-Za-z0-9_])(?:" + alternatives + ")(?![A-Za-z0-9_])", Pattern.CASE_INSENSITIVE);
     }

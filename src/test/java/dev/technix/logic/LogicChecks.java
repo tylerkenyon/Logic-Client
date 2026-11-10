@@ -581,6 +581,11 @@ public final class LogicChecks {
             "Measure protected text without changing source components");
         require(new dev.technix.logic.client.render.NameMask(java.util.Map.of()).replace(sequence) == sequence,
             "An empty mask preserves the original sequence");
+        var emptyNameMask = new dev.technix.logic.client.render.NameMask(java.util.Map.of("", "You", "alice", "Hidden"));
+        var punctuation = net.minecraft.util.FormattedCharSequence.forward("!", red);
+        require(emptyNameMask.replace(punctuation) == punctuation && emptyNameMask.replace("!").equals("!"),
+            "Ignore empty names without matching past the end of styled text");
+        require(emptyNameMask.replace("Alice!").equals("Hidden!"), "Keep valid replacements alongside an empty name");
         var hider = new dev.technix.logic.client.module.impl.NameHider();
         var modes = (MultiSelectSetting) hider.settings().getFirst();
         var selfName = (dev.technix.logic.client.setting.StringSetting) hider.settings().get(1);
