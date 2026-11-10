@@ -1,8 +1,8 @@
 # gradle
 .agent-work/
-injector/target/
-dist/
-dist-*/
+/injector/target/
+/dist/
+/dist-*/
 
 .gradle/
 build/
@@ -42,10 +42,9 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
-/logs
-/mica/logs
-/mica/logs
-/libs
-*.gz
-/mica/logs
-/libs
+# Runtime logs
+/logs/
+/mica/logs/
+
+# Local dependencies; the tracked Mica JAR is required by the Gradle build
+/libs/
