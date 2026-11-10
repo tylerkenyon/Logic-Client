@@ -5,12 +5,23 @@ import dev.technix.mica.internal.ImGuiFonts;
 import dev.technix.mica.api.FontRegistry;
 import net.minecraft.resources.Identifier;
 import imgui.ImGui;
+//? if <26.3 {
 import static org.lwjgl.glfw.GLFW.*;
+//?} else {
+/*import static org.lwjgl.sdl.SDLInit.*;
+import static org.lwjgl.sdl.SDLEvents.SDL_PumpEvents;
+import static org.lwjgl.sdl.SDLVideo.*;
+import static org.lwjgl.sdl.SDLProperties.SDL_GetPointerProperty;
+*///?}
 
  
 public final class ProtectedOverlayCheck {
     public static void main(String[] args) {
+        //? if <26.3 {
         if (!glfwInit()) throw new AssertionError("GLFW initialization failed");
+        //?} else {
+        /*if (!SDL_Init(SDL_INIT_VIDEO)) throw new AssertionError("SDL initialization failed");
+        *///?}
         try {
             for (int cycle = 0; cycle < 2; cycle++) {
                 ImGui.createContext();
@@ -21,7 +32,7 @@ public final class ProtectedOverlayCheck {
                 try (ProtectedOverlay overlay = new ProtectedOverlay()) {
                     overlay.init();
                     overlay.verifyCaptureProtection();
-                    if (glfwGetCurrentContext() != 0) throw new AssertionError("Initialization leaked a GL context");
+                    if (dev.technix.mica.internal.MinecraftAccess.hasOpenGlContext()) throw new AssertionError("Initialization leaked a GL context");
                     for (int frame = 0; frame < 12; frame++) {
                         if (frame == 3) {
                             ImGuiFonts.reload();
@@ -41,21 +52,38 @@ public final class ProtectedOverlayCheck {
                         ImGui.render();
                         assertTextPixels(overlay);
                         overlay.drawFrame();
-                        if (glfwGetCurrentContext() != 0) throw new AssertionError("Rendering leaked a GL context");
+                        if (dev.technix.mica.internal.MinecraftAccess.hasOpenGlContext()) throw new AssertionError("Rendering leaked a GL context");
                     }
                      
                     try {
                         var field = ProtectedOverlay.class.getDeclaredField("window");
                         field.setAccessible(true);
                         long handle = field.getLong(overlay);
-                        var nativeWindow = new com.sun.jna.platform.win32.WinDef.HWND(com.sun.jna.Pointer.createConstant(
-                            org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window(handle)));
+                        //? if <26.3 {
+                        long hwnd = org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window(handle);
+                        //?} else {
+                        /*long hwnd = SDL_GetPointerProperty(SDL_GetWindowProperties(handle), SDL_PROP_WINDOW_WIN32_HWND_POINTER, 0);
+                        *///?}
+                        var nativeWindow = new com.sun.jna.platform.win32.WinDef.HWND(com.sun.jna.Pointer.createConstant(hwnd));
+                        //? if >=26.3 {
+                        /*var windows = com.sun.jna.platform.win32.User32.INSTANCE;
+                        if (!windows.SetWindowPos(nativeWindow, null, 32, 32, 160, 120, 0x0014))
+                            throw new AssertionError("Could not position the SDL overlay");
+                        windows.ShowWindow(nativeWindow, 4);
+                        SDL_PumpEvents();
+                        overlay.verifyCaptureProtection();
+                        *///?}
                         var api = com.sun.jna.Native.load("user32", ProtectedOverlay.CaptureApi.class,
                             com.sun.jna.win32.W32APIOptions.DEFAULT_OPTIONS);
                         if (!api.SetWindowDisplayAffinity(nativeWindow, 0)) throw new AssertionError("Cannot simulate exclusion loss");
                         boolean rejected = false;
                         try { overlay.drawFrame(); } catch (IllegalStateException expected) { rejected = true; }
-                        if (!rejected || glfwGetWindowAttrib(handle, GLFW_VISIBLE) != GLFW_FALSE) {
+                        //? if <26.3 {
+                        boolean visible = glfwGetWindowAttrib(handle, GLFW_VISIBLE) != GLFW_FALSE;
+                        //?} else {
+                        /*boolean visible = (SDL_GetWindowFlags(handle) & SDL_WINDOW_HIDDEN) == 0;
+                        *///?}
+                        if (!rejected || visible) {
                             throw new AssertionError("Overlay must hide and reject rendering when protection is lost");
                         }
                     } catch (ReflectiveOperationException failure) {
@@ -67,7 +95,11 @@ public final class ProtectedOverlayCheck {
                 }
             }
         } finally {
+            //? if <26.3 {
             glfwTerminate();
+            //?} else {
+            /*SDL_Quit();
+            *///?}
         }
         System.out.println("Protected overlay check passed: native exclusion verified, text rendered, protection loss blocked, contexts restored, windows cleaned up.");
     }

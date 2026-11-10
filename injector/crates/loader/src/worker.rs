@@ -30,7 +30,7 @@ pub fn run() {
 }
 
 unsafe fn install() -> Result<(), String> {
-    crate::paths::initialize().map_err(|error| format!("create Logic data directory: {error}"))?;
+    let data_root = crate::paths::initialize().map_err(|error| format!("create Logic data directory: {error}"))?;
     let vm = find_vm()?;
     let env = attach_current_thread(vm)?;
     struct Detach(VmPtr);
@@ -46,12 +46,27 @@ unsafe fn install() -> Result<(), String> {
     init_jvmti(vm)?;
     log!("JVMTI ready");
 
-    let jar = write_payload()?;
-    log!("using payload at {}", jar.display());
-
     let runtime = write_runtime()?;
     let parent = add_to_knot(&jni, &runtime)?;
     let host = class_for_name(&jni, "dev.technix.logic.host.RuntimeHost", parent, true)?;
+    #[cfg(payload_26_3)]
+    let payload = {
+        let method = jni.get_static_method_id(host, "minecraftVersion", "()Ljava/lang/String;");
+        jni.check("RuntimeHost.minecraftVersion lookup")?;
+        let version = jni.call_static_object(host, method, &[]);
+        jni.check("RuntimeHost.minecraftVersion")?;
+        let version = jni.get_string_utf(jni_non_null(version)?);
+        log!("target Minecraft {version}");
+        match version.as_str() {
+            "26.2" => PAYLOAD,
+            "26.3" => include_bytes!(env!("LOGIC_PAYLOAD_26_3_JAR")).as_slice(),
+            _ => return Err(format!("Minecraft {version} is unsupported. Choose a 26.2 or 26.3 Fabric game.")),
+        }
+    };
+    #[cfg(not(payload_26_3))]
+    let payload = PAYLOAD;
+    let jar = write_payload(payload)?;
+    log!("using payload at {}", jar.display());
     let open = jni.get_static_method_id(host, "openPayload", "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/ClassLoader;");
     jni.check("RuntimeHost.openPayload lookup")?;
     let jar_path = jni.new_string(&jar.to_string_lossy());
@@ -64,10 +79,20 @@ unsafe fn install() -> Result<(), String> {
     log!("natives registered");
 
     let bootstrap = class_for_name(&jni, BOOTSTRAP, loader, true)?;
-    let start = jni.get_static_method_id(bootstrap, "start", "()V");
-    jni.check("resolve Bootstrap.start")?;
-     
-    jni.call_static_void(bootstrap, start, &[]);
+    #[cfg(payload_26_3)]
+    {
+        let start = jni.get_static_method_id(bootstrap, "start", "(Ljava/lang/String;)V");
+        jni.check("resolve Bootstrap.start")?;
+        let root = jni.new_string(&data_root.to_string_lossy());
+        jni.call_static_void(bootstrap, start, &[obj(root)]);
+    }
+    #[cfg(not(payload_26_3))]
+    {
+        let _ = data_root;
+        let start = jni.get_static_method_id(bootstrap, "start", "()V");
+        jni.check("resolve Bootstrap.start")?;
+        jni.call_static_void(bootstrap, start, &[]);
+    }
     jni.check("Bootstrap.start")?;
     Ok(())
 }
@@ -112,14 +137,14 @@ unsafe fn find_vm() -> Result<VmPtr, String> {
     Err("no JavaVM was created".into())
 }
 
-fn write_payload() -> Result<PathBuf, String> {
+fn write_payload(payload: &[u8]) -> Result<PathBuf, String> {
     let dir = crate::paths::initialize().map_err(|e| format!("create Logic data directory: {e}"))?
         .join("runtime").join("payloads");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     let generation = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?.as_nanos();
     let path = dir.join(format!("logic-payload-{}-{generation}.jar", std::process::id()));
-    std::fs::write(&path, PAYLOAD).map_err(|e| format!("write {}: {e}", path.display()))?;
+    std::fs::write(&path, payload).map_err(|e| format!("write {}: {e}", path.display()))?;
     Ok(path)
 }
 

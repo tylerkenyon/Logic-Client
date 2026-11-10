@@ -211,7 +211,11 @@ public final class AnchorMacro extends Module {
             var result = mc().gameMode.useItemOn(player, action.hand(), hit);
             actedTick = player.tickCount;
             if (result.consumesAction()) {
+                //? if <26.3 {
                 player.swing(action.hand());
+                //?} else {
+                /*player.swing(action.hand(), net.minecraft.world.item.component.SwingAnimation.DEFAULT, true);
+                *///?}
                 int previousCharge = before.is(Blocks.RESPAWN_ANCHOR) ? before.getValue(RespawnAnchorBlock.CHARGE) : 0;
                 pending = new Pending(action, previousCharge, System.nanoTime() + 1_000_000_000L);
                 if (action.stage() == Stage.PLACE) {
@@ -261,9 +265,21 @@ public final class AnchorMacro extends Module {
 
     public void observeOutgoing(Packet<?> packet) {
         if (!enabled() || !sameSession() || !(packet instanceof ServerboundUseItemOnPacket use)
+                //? if <26.3 {
                 || !player.getItemInHand(use.getHand()).is(Items.RESPAWN_ANCHOR)) return;
+                //?} else {
+                /*|| !player.getItemInHand(use.hand()).is(Items.RESPAWN_ANCHOR)) return;
+                *///?}
+        //? if <26.3 {
         var state = level.getBlockState(use.getHitResult().getBlockPos());
+        //?} else {
+        /*var state = level.getBlockState(use.hitResult().getBlockPos());
+        *///?}
+        //? if <26.3 {
         if (!state.is(Blocks.RESPAWN_ANCHOR)) ownAnchors.put(placementPosition(use.getHitResult(), state.canBeReplaced()), System.nanoTime());
+        //?} else {
+        /*if (!state.is(Blocks.RESPAWN_ANCHOR)) ownAnchors.put(placementPosition(use.hitResult(), state.canBeReplaced()), System.nanoTime());
+        *///?}
     }
 
     public void observeIncoming(Packet<?> packet) {

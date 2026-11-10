@@ -1,5 +1,6 @@
 package dev.technix.logic.mixin;
 
+import dev.technix.mica.internal.GameInput;
 import dev.technix.logic.client.LogicClient;
 import dev.technix.logic.client.module.impl.ClickGui;
 import dev.technix.mica.internal.ActiveRenderers;
@@ -22,8 +23,8 @@ public class MouseHandlerMixin {
         at = @At("HEAD"), cancellable = true)
     private void logic$button(long window, MouseButtonInfo info, int action, CallbackInfo ci) {
         if (!logic$isOpen()) return;
-        if (LogicClient.MODULES.get(ClickGui.class).bindMouse(info.button(), action)) { ci.cancel(); return; }
-        ActiveRenderers.feedMouseButton(info.button(), action != GLFW.GLFW_RELEASE);
+        if (LogicClient.MODULES.get(ClickGui.class).bindMouse(GameInput.mouse(info.button()), action)) { ci.cancel(); return; }
+        ActiveRenderers.feedMouseButton(GameInput.mouse(info.button()), action != GLFW.GLFW_RELEASE);
         ci.cancel();
     }
 

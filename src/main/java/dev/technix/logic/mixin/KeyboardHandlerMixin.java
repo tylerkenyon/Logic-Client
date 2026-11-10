@@ -1,5 +1,6 @@
 package dev.technix.logic.mixin;
 
+import dev.technix.mica.internal.GameInput;
 import dev.technix.logic.Logic;
 import dev.technix.logic.client.LogicClient;
 import dev.technix.logic.client.module.impl.ClickGui;
@@ -25,16 +26,28 @@ public class KeyboardHandlerMixin {
         }
     }
 
+    //? if >=26.3 {
+    /*@Inject(method = "textInput(JLjava/lang/String;)V", at = @At("HEAD"), cancellable = true)
+    private void logic$textInput(long window, String text, CallbackInfo ci) {
+        if (!LogicClient.running()) return;
+        ClickGui gui = LogicClient.MODULES.get(ClickGui.class);
+        if (gui.open()) {
+            text.codePoints().forEach(gui::handleCharacter);
+            ci.cancel();
+        }
+    }
+    *///?}
+
     @Inject(method = "keyPress(JILnet/minecraft/client/input/KeyEvent;)V", at = @At("HEAD"), cancellable = true)
     private void logic$keyPress(long window, int action, KeyEvent event, CallbackInfo ci) {
         if (!LogicClient.running()) return;
         ClickGui gui = (ClickGui) LogicClient.MODULES.byName("ClickGUI").orElse(null);
         if (gui != null && gui.open()) {
-            gui.handleKey(event.key(), action);
+            gui.handleKey(GameInput.key(event.key()), action);
             ci.cancel();
             return;
         }
-        Logic.events().post(new KeyPressEvent(event.key(), action));
+        Logic.events().post(new KeyPressEvent(GameInput.key(event.key()), action));
         if (gui != null && gui.open()) ci.cancel();
     }
 }

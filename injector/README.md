@@ -16,12 +16,12 @@ cannot be replaced inside that session, including after a failed initialization.
 
 ## Inject
 
-1. Start Minecraft **26.2**, **Java 25**, **Fabric Loader** and **Fabric API**.
+1. Start Minecraft **26.2** or **26.3** with **Java 25**, **Fabric Loader** and **Fabric API**.
 2. Use the OpenGL or Vulkan graphics backend.
 3. Run `LogicLauncher.exe` with `logic_native.dll` beside it.
-4. Select the Minecraft process using Up/Down and press Enter.
+4. Select the Minecraft window and click **Inject**. The loader picks the payload from the game version.
 
-Alternatively run `LogicLauncher.exe <pid>`. Mica is embedded and injected too;
+Use `LogicLauncher.exe --console` for the terminal picker and update checks, or `LogicLauncher.exe <pid>` to inject directly. Mica is embedded and injected too;
 neither Logic nor Mica needs to be installed in the mods directory. Existing
 active Mica is reused. OpenGL supports the Logic overlay; Vulkan-only atlas textures
 and frosted-glass effects are not available in the OpenGL path. The launcher shows native loading and Java initialization
@@ -40,21 +40,21 @@ needed for the capture-excluded Mica overlay; exclusive fullscreen hides it.
 
 Install the versioned `logic` jar in the mods directory with Fabric API. Mica and its
 libraries are nested inside the mod jar: do not install a second Mica copy.
-The separate `mica-0.2.jar` is included for standalone use, not required by Logic.
+Use the Logic JAR named for your Minecraft version.
 The injectable payload jar is not the Fabric mod jar.
 
 ## Tests and logs
 
 `gradlew.bat build --offline` runs module checks and verifies live transformations
-against Minecraft 26.2, including class schema preservation and duplicate rejection.
+against Minecraft 26.2 and 26.3, including class schema preservation and duplicate rejection.
 `injector/tests/smoke.ps1` creates its own disposable JVM and verifies native loading,
 JNI registration, class-byte capture, redefinition and rollback. It does not inject
 into a user's running game. Its separate test DLL is not distributed.
 
 Logs are stored under `%APPDATA%/.logic/logs/`; the embedded payload is extracted to
-`%APPDATA%/.logic/runtime/payloads/`. The interactive Windows launcher checks the latest
+`%APPDATA%/.logic/runtime/payloads/`. The Windows console picker checks the latest
 public GitHub release on startup and asks before updating. Keep `meta.json` beside the
-launcher and DLL. Use `--offline` to skip update checks. If a game has the native DLL
+launcher and DLL. Use `--offline` for the terminal picker without update checks. If a game has the native DLL
 loaded, close it before updating. Failed checks leave the installed version available.
 
 For a release, update `version` in `gradle.properties` and run `build-release.bat`.

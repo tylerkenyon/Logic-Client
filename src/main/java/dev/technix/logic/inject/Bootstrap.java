@@ -18,7 +18,9 @@ public final class Bootstrap {
     private Bootstrap() { }
 
 
-    public static void start() {
+    public static void start() { start(null); }
+
+    public static void start(String dataDirectory) {
         if (!STARTED.compareAndSet(false, true)) throw new IllegalStateException("Logic injection has already started");
         try {
             try {
@@ -41,7 +43,12 @@ public final class Bootstrap {
                 return;
             }
             String version = loader.getModContainer("minecraft").orElseThrow().getMetadata().getVersion().getFriendlyString();
-            if (!version.equals("26.2")) throw new IllegalStateException("Injection supports Minecraft 26.2, found " + version);
+            //? if <26.3 {
+            String expected = "26.2";
+            //?} else {
+            /*String expected = "26.3";
+            *///?}
+            if (!version.equals(expected)) throw new IllegalStateException("Expected Minecraft " + expected + ", found " + version);
             if (!loader.isModLoaded("fabric-api")) {
                 throw new IllegalStateException("Injection requires Fabric API; Mica is bundled in the payload");
             }
@@ -53,7 +60,7 @@ public final class Bootstrap {
             if (game == null) throw new IllegalStateException("Minecraft did not finish starting within 60 seconds");
             CompletableFuture<Void> done = new CompletableFuture<>();
             game.execute(() -> {
-                try { install(); done.complete(null); }
+                try { install(dataDirectory); done.complete(null); }
                 catch (Throwable failure) { done.completeExceptionally(failure); }
             });
 
@@ -64,7 +71,7 @@ public final class Bootstrap {
         }
     }
 
-    private static void install() throws Exception {
+    private static void install(String dataDirectory) throws Exception {
         boolean injectMica = ActiveRenderers.get() == null;
         boolean micaHooks = !FabricLoader.getInstance().isModLoaded("mica");
         if (injectMica) InjectedMica.prepare();
@@ -87,8 +94,8 @@ public final class Bootstrap {
             RuntimeHost.bind(InjectionHooks::dispatch);
             ownsRenderer = injectMica;
             InjectionHooks.ownsMica = micaHooks;
-            if (injectMica) InjectedMica.start();
-            new LogicClient().initializeInjected();
+            if (injectMica) InjectedMica.start().setDiagnostics(NativeBridge::log);
+            new LogicClient().initializeInjected(dataDirectory == null ? null : java.nio.file.Path.of(dataDirectory, "config.json"));
             InjectionHooks.active = true;
             NativeBridge.log("client initialised: Logic ready; Mica " + (injectMica ? "injected from payload" : "already active"));
         } catch (Throwable failure) {

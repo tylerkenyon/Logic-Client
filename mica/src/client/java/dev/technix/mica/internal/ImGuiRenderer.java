@@ -12,7 +12,7 @@ import imgui.ImGui;
 import imgui.ImGuiIO;
 import imgui.gl3.ImGuiImplGl3;
 import net.minecraft.client.Minecraft;
-import static org.lwjgl.glfw.GLFW.*;
+
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VkCommandBuffer;
@@ -114,7 +114,7 @@ public final class ImGuiRenderer {
         }
         if (streamproof && (captureStatus == CaptureStatus.FAILED || captureStatus == CaptureStatus.UNSUPPORTED)) return;
         vulkanContext = compat.currentVulkanContext().orElse(null);
-        openGl = vulkanContext == null && glfwGetCurrentContext() != 0;
+        openGl = vulkanContext == null && MinecraftAccess.hasOpenGlContext();
         if (vulkanContext == null && !openGl) return;
         ImGui.createContext();
         ImGuiIO io = ImGui.getIO();
@@ -272,11 +272,9 @@ public final class ImGuiRenderer {
         Integer contextWidth = openGl ? null : vulkanContext.framebufferWidth();
         Integer contextHeight = openGl ? null : vulkanContext.framebufferHeight();
         if (openGl) {
-            try (MemoryStack stack = stackPush()) {
-                var w = stack.mallocInt(1); var h = stack.mallocInt(1);
-                glfwGetFramebufferSize(Minecraft.getInstance().getWindow().handle(), w, h);
-                contextWidth = w.get(0); contextHeight = h.get(0);
-            }
+            var window = Minecraft.getInstance().getWindow();
+            contextWidth = window.getWidth();
+            contextHeight = window.getHeight();
         }
         int width = contextWidth != null && contextWidth > 0 ? contextWidth : 1;
         int height = contextHeight != null && contextHeight > 0 ? contextHeight : 1;
@@ -435,7 +433,11 @@ public final class ImGuiRenderer {
         if (openGlBackend != null) {
             ImGui.render();
             var gameTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
+            //? if <26.3 {
             if (!(gameTarget.getColorTextureView() instanceof com.mojang.blaze3d.opengl.GlTextureView color)) return;
+            //?} else {
+            /*if (!(gameTarget.getColorTextureView() instanceof com.mojang.renderpearl.backend.opengl.GlTextureView color)) return;
+            *///?}
             int previous = org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER_BINDING);
             if (openGlFramebuffer == 0) openGlFramebuffer = org.lwjgl.opengl.GL30.glGenFramebuffers();
             try {

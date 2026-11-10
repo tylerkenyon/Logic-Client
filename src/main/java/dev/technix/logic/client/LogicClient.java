@@ -83,14 +83,14 @@ public final class LogicClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        initialize(false);
+        initialize(false, null);
     }
 
-    public void initializeInjected() {
-        initialize(true);
+    public void initializeInjected(java.nio.file.Path configFile) {
+        initialize(true, configFile);
     }
 
-    private void initialize(boolean injected) {
+    private void initialize(boolean injected, java.nio.file.Path configFile) {
         if (initialized) return;
         initialized = true;
         instance = this;
@@ -127,7 +127,8 @@ public final class LogicClient implements ClientModInitializer {
         MODULES.register(guiConfig);
         MODULES.register(new ArraylistModule());
         MODULES.register(new dev.technix.logic.client.module.impl.SelfDestruct());
-        config = new ConfigStore(MODULES, clickGuiRenderer, THEME);
+        config = configFile == null ? new ConfigStore(MODULES, clickGuiRenderer, THEME)
+            : new ConfigStore(configFile, MODULES, clickGuiRenderer, THEME);
         config.load();
 
          
@@ -240,8 +241,16 @@ public final class LogicClient implements ClientModInitializer {
         if (interceptCommonPacket(packet, connection)) return true;
         if (instance.clientSpoofer.protectsTranslations() && packet instanceof ClientboundOpenSignEditorPacket open
                 && Minecraft.getInstance().level != null
+                //? if <26.3 {
                 && Minecraft.getInstance().level.getBlockEntity(open.getPos()) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+                //?} else {
+                /*&& Minecraft.getInstance().level.getBlockEntity(open.pos()) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+                *///?}
+            //? if <26.3 {
             instance.clientSpoofer.protectSign(sign, open.isFrontText());
+            //?} else {
+            /*instance.clientSpoofer.protectSign(sign, open.slot() == net.minecraft.world.level.block.entity.SignTextSlot.FRONT);
+            *///?}
         }
         MODULES.get(Blink.class).observeIncoming(packet);
         MODULES.get(LagRange.class).observeIncoming(packet);

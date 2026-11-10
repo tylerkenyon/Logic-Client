@@ -344,7 +344,11 @@ public final class LogicChecks {
 
     private static void checkInventoryModules() {
         net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS
+            //? if <26.3 {
             .build(net.minecraft.data.registries.VanillaRegistries.createLookup())
+            //?} else {
+            /*.build(net.minecraft.data.registries.VanillaRegistries.createWorldLookup())
+            *///?}
             .forEach(net.minecraft.core.component.DataComponentInitializers.PendingComponents::apply);
         var head = net.minecraft.world.entity.EquipmentSlot.HEAD;
         var diamond = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DIAMOND_HELMET);
@@ -483,10 +487,10 @@ public final class LogicChecks {
     private static void checkLagRange() {
         var movement = new net.minecraft.network.protocol.game.ServerboundMovePlayerPacket.Pos(1, 2, 3, true, false);
         var slot = new net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket(2);
-        var swing = new net.minecraft.network.protocol.game.ServerboundSwingPacket(net.minecraft.world.InteractionHand.MAIN_HAND);
+        var use = new net.minecraft.network.protocol.game.ServerboundUseItemPacket(net.minecraft.world.InteractionHand.MAIN_HAND, 0, 0, 0);
         require(dev.technix.logic.client.module.impl.Blink.buffersGameplayPacket(movement)
             && dev.technix.logic.client.module.impl.Blink.buffersGameplayPacket(slot)
-            && dev.technix.logic.client.module.impl.Blink.buffersGameplayPacket(swing),
+            && dev.technix.logic.client.module.impl.Blink.buffersGameplayPacket(use),
             "Blink and Lag Range share ordering for movement, hotbar changes and combat actions");
         var debugPing = new net.minecraft.network.protocol.ping.ServerboundPingRequestPacket(1);
         var tickEnd = net.minecraft.network.protocol.game.ServerboundClientTickEndPacket.INSTANCE;
@@ -506,7 +510,7 @@ public final class LogicChecks {
         io.netty.channel.ChannelFutureListener listener = future -> { };
         var first = new Outgoing(movement, listener, false);
         var second = new Outgoing(slot, null, true);
-        var third = new Outgoing(swing, listener, false);
+        var third = new Outgoing(use, listener, false);
         require(queue.offer(first, 0) && queue.offer(second, 10) && queue.offer(third, 20), "Queue a complete ordered action sequence");
         require(!queue.offer(first, 30), "Bound outgoing queue growth");
         require(queue.release(150, 150).equals(java.util.List.of(first)), "Only replay packets whose own hold budget expired");
@@ -607,7 +611,7 @@ public final class LogicChecks {
         gui.editText(field);
         gui.handleKey(org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT, org.lwjgl.glfw.GLFW.GLFW_PRESS);
         gui.handleCharacter(0x1F600);
-        gui.handleKey(org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE, org.lwjgl.glfw.GLFW.GLFW_REPEAT);
+        gui.handleKey(org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE, com.mojang.blaze3d.platform.InputConstants.REPEAT);
         require(field.get().equals("AB") && gui.textCursor() == 1, "Insert and delete whole Unicode codepoints at the cursor");
         gui.handleCharacter('C');
         gui.handleKey(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, org.lwjgl.glfw.GLFW.GLFW_PRESS);

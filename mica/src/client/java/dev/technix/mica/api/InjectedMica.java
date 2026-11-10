@@ -15,7 +15,7 @@ public final class InjectedMica {
     public static void prepare() {
         MinecraftAccess.verify();
         if (!new MinecraftCompatImpl_26_2().isVulkanRendererActive()
-                && org.lwjgl.glfw.GLFW.glfwGetCurrentContext() == 0) {
+                && !MinecraftAccess.hasOpenGlContext()) {
             throw new IllegalStateException("Mica requires a Vulkan or OpenGL renderer");
         }
     }
