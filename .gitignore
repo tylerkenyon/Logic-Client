@@ -42,3 +42,8 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+/logs
+/mica/logs
+/mica/logs
+/libs
+*.gz

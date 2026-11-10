@@ -132,9 +132,6 @@ public final class OverlayRenderer implements AutoCloseable {
 
 
     public boolean prepareForFrame() {
-        if (!compat.isVulkanRendererActive()) {
-            return false;
-        }
         try {
             renderer.refreshVulkanContext();
             if (!renderer.beginFrame()) return false;
@@ -150,7 +147,7 @@ public final class OverlayRenderer implements AutoCloseable {
 
 
     public void renderOverlay() {
-        if (renderer.getVulkanContext() == null || !renderer.isEnabled()) {
+        if ((renderer.getVulkanContext() == null && !renderer.isOpenGl()) || !renderer.isEnabled()) {
             return;
         }
         try {

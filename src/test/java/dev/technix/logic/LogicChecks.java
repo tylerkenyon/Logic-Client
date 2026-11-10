@@ -20,6 +20,7 @@ import dev.technix.logic.client.render.ScreenProjection;
 import dev.technix.logic.client.setting.BooleanSetting;
 import dev.technix.logic.client.setting.NumberSetting;
 import dev.technix.logic.client.setting.ModeSetting;
+import dev.technix.logic.client.setting.Setting;
 import org.joml.Matrix4f;
 
 public final class LogicChecks {
@@ -41,6 +42,18 @@ public final class LogicChecks {
         require(!Backtrack.acceptsTargetType(net.minecraft.world.entity.monster.zombie.Zombie.class, true), "Players only must exclude mobs");
         require(Backtrack.acceptsTargetType(net.minecraft.client.player.RemotePlayer.class, true), "Keep remote-player backtracking supported");
         require(!Backtrack.acceptsTargetType(net.minecraft.world.entity.Entity.class, false), "Never acquire nonliving targets");
+        var backtrackModeCheck = new Backtrack();
+        var backtrackMode = (ModeSetting) backtrackModeCheck.settings().stream().filter(setting -> setting.name().equals("Mode")).findFirst().orElseThrow();
+        backtrackMode.set("Freeze");
+        require(backtrackModeCheck.settings().stream().anyMatch(setting -> setting.name().equals("Release distance") && setting.visible())
+            && backtrackModeCheck.settings().stream().anyMatch(setting -> setting.name().equals("Delay") && !setting.visible()), "Freeze shows its own settings and hides standard settings");
+        var partial = (BooleanSetting) backtrackModeCheck.settings().stream().filter(setting -> setting.name().equals("Partial release")).findFirst().orElseThrow();
+        var amount = backtrackModeCheck.settings().stream().filter(setting -> setting.name().equals("Release amount")).findFirst().orElseThrow();
+        require(!amount.visible(), "Partial release options are hidden while disabled");
+        partial.set(true);
+        require(amount.visible(), "Partial release options appear when enabled");
+        backtrackMode.set("Standard");
+        require(backtrackModeCheck.settings().stream().anyMatch(setting -> setting.name().equals("Delay") && setting.visible()), "Standard settings return when switching modes");
         EagleAlignment aligned = new EagleAlignment();
         require(aligned.update(true, false, 0, true), "Sneak when the edge prediction detects danger");
         require(aligned.update(false, true, 0, true), "A second update in the same tick must not immediately release sneak");
@@ -149,6 +162,10 @@ public final class LogicChecks {
         require(!keys.firstActive() && keys.secondActive(), "Recover from an initial simultaneous press");
         keys.update(false, false);
         require(!keys.firstActive() && !keys.secondActive(), "Release both directions without leaving a stuck key");
+        var batches = new PacketDelayQueue<String>(4);
+        batches.offer("a", 2); batches.offer("b", 2); batches.offer("c", 3); batches.offer("d", 5);
+        require(batches.releaseSpan(2).equals(java.util.List.of("a", "b", "c"))
+            && batches.drain().equals(java.util.List.of("d")), "Partial release preserves complete tick groups and packet order");
         PacketDelayQueue<String> packets = new PacketDelayQueue<>(2);
         require(packets.offer("move1", 0) && packets.offer("move2", 50), "Queue movement in arrival order");
         require(!packets.offer("overflow", 60), "Bound the retained packet count");
@@ -587,9 +604,18 @@ public final class LogicChecks {
     private static void checkClientSpoofer() {
         var spoofer = new dev.technix.logic.client.module.impl.ClientSpoofer();
         var brand = (ModeSetting) spoofer.settings().getFirst();
+        var options = spoofer.settings().stream().collect(java.util.stream.Collectors.toMap(Setting::name, setting -> setting));
+        var channels = (dev.technix.logic.client.setting.BooleanSetting) options.get("Hide mod channels");
+        var translations = (dev.technix.logic.client.setting.BooleanSetting) options.get("Block translation probes");
+        var packs = (dev.technix.logic.client.setting.BooleanSetting) options.get("Anti force resource pack");
+        var requiredPack = new net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket(java.util.UUID.randomUUID(), "https://example.com/pack.zip", "", true, java.util.Optional.empty());
+        var optionalPack = new net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket(java.util.UUID.randomUUID(), "https://example.com/pack.zip", "", false, java.util.Optional.empty());
         var original = new net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket(
             new net.minecraft.network.protocol.common.custom.BrandPayload("original"));
         require(spoofer.rewriteBrand(original) == original, "Disabled spoofer preserves the brand packet");
+        var register = new net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket(
+            new net.minecraft.network.protocol.common.custom.DiscardedPayload(net.minecraft.resources.Identifier.parse("minecraft:register")));
+        require(!spoofer.suppress(register), "Disabled spoofer preserves channel registrations");
         spoofer.setEnabled(true);
         try {
             String[] expected = {"fabric", "vanilla", "lunarclient:v2.12.0-2349,fabric"};
@@ -604,10 +630,32 @@ public final class LogicChecks {
             var otherPayload = new net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket(
                 new net.minecraft.network.protocol.common.custom.DiscardedPayload(net.minecraft.resources.Identifier.withDefaultNamespace("other")));
             require(spoofer.rewriteBrand(otherPayload) == otherPayload, "Preserve other custom payloads");
+            require(spoofer.suppress(register) && !spoofer.suppress(otherPayload), "Suppress channel advertisements only");
+            channels.set(false);
+            require(!spoofer.suppress(register), "Channel protection can be disabled");
+            require(spoofer.protectsTranslations(), "Translation protection starts enabled");
+            translations.set(false);
+            require(!spoofer.protectsTranslations(), "Translation protection can be disabled");
+            require(!spoofer.spoofPack(requiredPack), "Forced pack protection starts disabled");
+            packs.set(true);
+            require(spoofer.spoofPack(requiredPack) && !spoofer.spoofPack(optionalPack), "Only spoof required packs when protection is enabled");
+            var responses = dev.technix.logic.client.module.impl.ClientSpoofer.packResponses(requiredPack);
+            require(responses.stream().allMatch(response -> response.id().equals(requiredPack.id()))
+                && responses.stream().map(net.minecraft.network.protocol.common.ServerboundResourcePackPacket::action).toList().equals(java.util.List.of(
+                    net.minecraft.network.protocol.common.ServerboundResourcePackPacket.Action.ACCEPTED,
+                    net.minecraft.network.protocol.common.ServerboundResourcePackPacket.Action.DOWNLOADED,
+                    net.minecraft.network.protocol.common.ServerboundResourcePackPacket.Action.SUCCESSFULLY_LOADED)),
+                "Report the requested pack as accepted, downloaded and loaded in order");
+            var probe = net.minecraft.network.chat.Component.literal("prefix ")
+                .append(net.minecraft.network.chat.Component.translatableWithFallback("mod.secret", "fallback"))
+                .append(net.minecraft.network.chat.Component.keybind("key.mod.secret"));
+            require(dev.technix.logic.client.module.impl.ClientSpoofer.safeSignText(probe).equals("prefix fallbackkey.mod.secret"),
+                "Sign editing must not resolve translation keys or keybinds");
         } finally {
             spoofer.setEnabled(false);
         }
         require(spoofer.rewriteBrand(original) == original, "Disabling restores the original brand");
+        require(!spoofer.spoofPack(requiredPack), "Disabled spoofer permits required packs");
         require(dev.technix.logic.host.RuntimeHost.rewriteOutgoing(original) == original,
             "Detached injector preserves the outgoing packet");
     }

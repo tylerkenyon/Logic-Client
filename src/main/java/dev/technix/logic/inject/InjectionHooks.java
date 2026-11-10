@@ -161,6 +161,8 @@ public final class InjectionHooks {
     }
 
     public static boolean packet(PacketListener listener, Packet<?> packet) {
+        if (active && listener instanceof net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl common
+                && !(listener instanceof ClientPacketListener) && LogicClient.interceptCommonPacket(packet, common)) return true;
         if (!active || !(listener instanceof ClientPacketListener client)
                 || client != Minecraft.getInstance().getConnection()) return false;
         return LogicClient.interceptPlayPacket(packet, client);

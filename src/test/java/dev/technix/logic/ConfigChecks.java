@@ -83,6 +83,7 @@ public final class ConfigChecks {
             require(!anchorSettings.get("Charging inventory").visible() && !anchorSettings.get("Restore after charging").visible()
                 && !anchorSettings.get("Charge macro placements").visible(), "Hide all charging options when charging is disabled");
             ((NumberSetting) lagSettings.get("Packet delay")).set(240.0);
+            ((NumberSetting) lagSettings.get("Range")).set(7.5);
             ((BooleanSetting) lagSettings.get("Show server position")).set(false);
             ((ModeSetting) lagSettings.get("Marker colour")).set("Amber");
             ((NumberSetting) lagSettings.get("Marker thickness")).set(2.5);
@@ -132,6 +133,7 @@ public final class ConfigChecks {
             ((BooleanSetting) anchorSettings.get("Charge anchors")).set(true);
             ((RangeSetting) anchorSettings.get("Action interval")).set(new RangeSetting.Value(0, 0));
             ((NumberSetting) lagSettings.get("Packet delay")).set(0.0);
+            ((NumberSetting) lagSettings.get("Range")).set(3.0);
             ((BooleanSetting) lagSettings.get("Show server position")).set(true);
             ((ModeSetting) lagSettings.get("Marker colour")).set("Blue");
             require(lagSettings.get("Marker colour").visible(), "Restore Lag Range appearance settings when its marker is enabled");
@@ -167,6 +169,7 @@ public final class ConfigChecks {
                 && ((RangeSetting) anchorSettings.get("Action interval")).high() == 80,
                 "Round-trip macro action bindings, switching modes, timing and hidden stage settings");
             require(lagSettings.get("Packet delay").get().equals(240.0)
+                && lagSettings.get("Range").get().equals(7.5)
                 && lagSettings.get("Marker colour").get().equals("Amber")
                 && lagSettings.get("Marker thickness").get().equals(2.5)
                 && lagSettings.get("Fill marker").get().equals(true) && !lagSettings.get("Marker colour").visible(),

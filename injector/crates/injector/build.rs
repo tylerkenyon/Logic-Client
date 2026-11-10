@@ -7,5 +7,5 @@ fn main() {
         .find_map(|line| line.strip_prefix("version="))
         .expect("mod_version is required")
         .trim();
-    println!("cargo:rustc-env=PRESTIGE_VERSION={version}");
+    println!("cargo:rustc-env=LOGIC_VERSION={version}");
 }

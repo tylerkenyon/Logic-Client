@@ -89,6 +89,8 @@ It pauses while the ClickGUI is open or an item is on the cursor. Both modules' 
 
 To observe it, enable Backtrack, attack a moving mob with a sword or axe and keep attack held while the **Hold attack** check is enabled. You can disable Hold attack for individual click-and-release attacks. Backtrack starts delaying updates when the recent target moves farther away within the configured distance range. Its Real position box shows the undelayed position. It releases updates when the hold expires, the target comes closer, eligibility is lost, or a configured hit/teleport barrier occurs.
 
+**Freeze** targets a player after an attack and shows their real position. **Release distance** sets the maximum distance in blocks; **Release after ticks** flushes the queue after that many client ticks (0 disables the timer). Enable **Partial release** to replay the configured number of ticks of queued history at each interval while continuing to hold newer packets. A full release requires another attack to start freezing again.
+
 With Arraylist **Show modes** enabled, Backtrack shows the actual queued-packet count while holding updates. **No target**, **Hold attack**, **Need weapon** and **Cooldown** identify common inactive states. A stationary target need not produce a visible delay. This is client-side packet delay; it does not increase server-side attack reach.
 
 ## Self Destruct

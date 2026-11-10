@@ -185,7 +185,8 @@ pub fn java_processes() -> Vec<JavaProcess> {
             continue;
         };
         let exe = path.rsplit(['\\', '/']).next().unwrap_or("").to_string();
-        if exe.eq_ignore_ascii_case("javaw.exe") || exe.eq_ignore_ascii_case("java.exe") {
+        if exe.eq_ignore_ascii_case("javaw.exe") || exe.eq_ignore_ascii_case("java.exe")
+            || module_loaded(pid, "jvm.dll") {
             out.push(JavaProcess { pid, title, exe });
         }
     }
