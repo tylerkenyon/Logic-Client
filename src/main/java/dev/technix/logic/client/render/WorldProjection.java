@@ -19,6 +19,13 @@ public final class WorldProjection {
             mc.getDeltaTracker().getGameTimeDeltaPartialTick(false), mc.level);
     }
 
+    public static Vec3 entityPosition(net.minecraft.world.entity.Entity entity, float partialTick) {
+        return new Vec3(
+            net.minecraft.util.Mth.lerp((double) partialTick, entity.xOld, entity.getX()),
+            net.minecraft.util.Mth.lerp((double) partialTick, entity.yOld, entity.getY()),
+            net.minecraft.util.Mth.lerp((double) partialTick, entity.zOld, entity.getZ()));
+    }
+
     public static Frame current() { return frame; }
     public static void clear() { frame = null; }
 }

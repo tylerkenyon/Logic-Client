@@ -83,7 +83,7 @@ public final class Trajectories extends Module {
             if (!(entity instanceof Projectile projectile) || !(projectile instanceof ThrowableProjectile || projectile instanceof AbstractArrow)
                     || projectile.isRemoved() || projectile.onGround() || projectile.getDeltaMovement().lengthSqr() < 0.0001
                     || mc.player.distanceToSqr(projectile) > 128 * 128) continue;
-            segment(ctx, frame, projectile.getPosition(frame.partialTick()), projectile.position(), color);
+            segment(ctx, frame, WorldProjection.entityPosition(projectile, frame.partialTick()), projectile.position(), color);
             Prediction result = predict(ctx, frame, projectile, projectile.position(), projectile.getDeltaMovement(), projectile.isNoGravity() ? 0 : projectile.getGravity(), projectile instanceof ThrowableProjectile, color);
             if (projectile instanceof ThrownEnderpearl && projectile.getOwner() == mc.player && result != null && projectile.tickCount < selectedAge) {
                 selected = result; selectedId = projectile.getUUID(); selectedAge = projectile.tickCount;

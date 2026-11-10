@@ -62,7 +62,7 @@ public final class ESP extends Module {
                         || (!invisible.get() && entity.isInvisibleTo(mc.player))
                         || mc.player.distanceToSqr(entity) > range.get() * range.get()) continue;
 
-                var box = entity.getBoundingBox().move(entity.getPosition(frame.partialTick())
+                var box = entity.getBoundingBox().move(WorldProjection.entityPosition(entity, frame.partialTick())
                     .subtract(entity.position())).inflate(0.03).move(frame.camera().scale(-1));
                 var screen = ScreenProjection.bounds(frame.matrix(), box.minX, box.minY, box.minZ,
                     box.maxX, box.maxY, box.maxZ, Camera.PROJECTION_Z_NEAR, context.width(), context.height());

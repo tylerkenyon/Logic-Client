@@ -5,6 +5,8 @@ import dev.technix.logic.client.module.Module;
 import dev.technix.logic.client.setting.Setting;
 import dev.technix.logic.client.setting.StringSetting;
 import dev.technix.logic.client.setting.KeybindSetting;
+import dev.technix.mica.api.CaptureStatus;
+import dev.technix.mica.internal.ActiveRenderers;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import org.lwjgl.glfw.GLFW;
@@ -16,6 +18,8 @@ public final class ClickGui extends Module {
     public static final int TOGGLE_KEY = GLFW.GLFW_KEY_RIGHT_SHIFT;
 
     private boolean open;
+    private boolean wasMouseGrabbed, cursorHidden;
+    private int previousCursorMode;
     private Object bindingTarget;
     private StringSetting editingText;
     private int textCursor;
@@ -112,12 +116,38 @@ public final class ClickGui extends Module {
         editText(null);
     }
 
+    public static boolean shouldHideCursor(boolean open, boolean wasGrabbed, boolean focused, CaptureStatus status) {
+        return open && wasGrabbed && focused && status == CaptureStatus.ACTIVE;
+    }
+
+    public boolean updateProtectedCursor() {
+        Minecraft mc = mc();
+        if (mc == null || mc.getWindow() == null) return false;
+        long window = mc.getWindow().handle();
+        var overlay = ActiveRenderers.get();
+        boolean hide = shouldHideCursor(open, wasMouseGrabbed, mc.isWindowActive()
+            && GLFW.glfwGetWindowMonitor(window) == 0
+            && GLFW.glfwGetWindowAttrib(window, GLFW.GLFW_ICONIFIED) == GLFW.GLFW_FALSE,
+            overlay == null ? CaptureStatus.DISABLED : overlay.captureStatus());
+        if (hide && !cursorHidden) {
+            previousCursorMode = GLFW.glfwGetInputMode(window, GLFW.GLFW_CURSOR);
+            GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_HIDDEN);
+            cursorHidden = true;
+        } else if (!hide && cursorHidden) {
+            if (GLFW.glfwGetInputMode(window, GLFW.GLFW_CURSOR) == GLFW.GLFW_CURSOR_HIDDEN)
+                GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, previousCursorMode);
+            cursorHidden = false;
+        }
+        return cursorHidden;
+    }
+
     @Override
     protected void onEnable() {
         open = true;
         KeyMapping.releaseAll();
         Minecraft mc = mc();
         if (mc != null && mc.mouseHandler != null) {
+            wasMouseGrabbed = mc.mouseHandler.isMouseGrabbed();
             mc.mouseHandler.releaseMouse();
         }
     }
@@ -127,9 +157,11 @@ public final class ClickGui extends Module {
         open = false;
         bindingTarget = null;
         editText(null);
+        updateProtectedCursor();
         Minecraft mc = mc();
-        if (mc != null && mc.player != null && mc.gui.screen() == null && mc.mouseHandler != null) {
+        if (wasMouseGrabbed && mc != null && mc.player != null && mc.gui.screen() == null && mc.mouseHandler != null) {
             mc.mouseHandler.grabMouse();
         }
+        wasMouseGrabbed = false;
     }
 }

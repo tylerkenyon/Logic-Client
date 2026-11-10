@@ -25,6 +25,11 @@ import org.joml.Matrix4f;
 
 public final class LogicChecks {
     public static void main(String[] args) {
+        require(dev.technix.logic.client.module.impl.ClickGui.shouldHideCursor(true, true, true, dev.technix.mica.api.CaptureStatus.ACTIVE), "Protect cursor opened from gameplay");
+        require(!dev.technix.logic.client.module.impl.ClickGui.shouldHideCursor(true, false, true, dev.technix.mica.api.CaptureStatus.ACTIVE)
+            && !dev.technix.logic.client.module.impl.ClickGui.shouldHideCursor(true, true, false, dev.technix.mica.api.CaptureStatus.ACTIVE)
+            && !dev.technix.logic.client.module.impl.ClickGui.shouldHideCursor(true, true, true, dev.technix.mica.api.CaptureStatus.FAILED)
+            && !dev.technix.logic.client.module.impl.ClickGui.shouldHideCursor(false, true, true, dev.technix.mica.api.CaptureStatus.ACTIVE), "Restore native cursor outside a protected gameplay menu");
         checkClientSpoofer();
         checkNameHider();
         checkAntiBot();

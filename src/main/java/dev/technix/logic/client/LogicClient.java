@@ -279,6 +279,7 @@ public final class LogicClient implements ClientModInitializer {
         Logic.events().post(new ClientTickEvent());
         client.eagle.update();
         client.applyCaptureSettings();
+        client.clickGui.updateProtectedCursor();
         client.config.tick();
     }
     private static void startClient() {
