@@ -45,8 +45,14 @@ public final class Bootstrap {
             if (!loader.isModLoaded("fabric-api")) {
                 throw new IllegalStateException("Injection requires Fabric API; Mica is bundled in the payload");
             }
+            Minecraft game = Minecraft.getInstance();
+            for (int attempt = 0; game == null && attempt < 600; attempt++) {
+                Thread.sleep(100);
+                game = Minecraft.getInstance();
+            }
+            if (game == null) throw new IllegalStateException("Minecraft did not finish starting within 60 seconds");
             CompletableFuture<Void> done = new CompletableFuture<>();
-            Minecraft.getInstance().execute(() -> {
+            game.execute(() -> {
                 try { install(); done.complete(null); }
                 catch (Throwable failure) { done.completeExceptionally(failure); }
             });

@@ -17,13 +17,14 @@ cannot be replaced inside that session, including after a failed initialization.
 ## Inject
 
 1. Start Minecraft **26.2**, **Java 25**, **Fabric Loader** and **Fabric API**.
-2. Use the **Vulkan** graphics backend (`--graphicsBackend vulkan`).
+2. Use the OpenGL or Vulkan graphics backend.
 3. Run `LogicLauncher.exe` with `logic_native.dll` beside it.
 4. Select the Minecraft process using Up/Down and press Enter.
 
 Alternatively run `LogicLauncher.exe <pid>`. Mica is embedded and injected too;
 neither Logic nor Mica needs to be installed in the mods directory. Existing
-active Mica is reused. The launcher shows native loading and Java initialization
+active Mica is reused. OpenGL supports the Logic overlay; Vulkan-only atlas textures
+and frosted-glass effects are not available in the OpenGL path. The launcher shows native loading and Java initialization
 progress. A successful native library load alone is not reported as success.
 
 The Windows launcher/DLL and JVM architectures must match. The included build is

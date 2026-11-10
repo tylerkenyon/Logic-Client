@@ -51,6 +51,39 @@ public final class InjectionChecks {
             }
         }
          
+        byte[] minecraft;
+        try (var stream = loader.getResourceAsStream("net/minecraft/client/Minecraft.class")) {
+            minecraft = stream.readAllBytes();
+        }
+        ClassNode lunar = read(minecraft);
+        MethodNode keybinds = lunar.methods.stream().filter(method -> method.name.equals("handleKeybinds")).findFirst().orElseThrow();
+        int attackReads = 0;
+        boolean wrappedClick = false;
+        for (var insn : keybinds.instructions) {
+            if (insn instanceof org.objectweb.asm.tree.FieldInsnNode field && field.name.equals("keyAttack") && ++attackReads == 2) {
+                var call = (MethodInsnNode) field.getNext();
+                call.setOpcode(Opcodes.INVOKESTATIC);
+                call.owner = lunar.name;
+                call.name = "lunarWrappedAttackClick";
+                call.desc = "(Lnet/minecraft/client/KeyMapping;)Z";
+                wrappedClick = true;
+                break;
+            }
+        }
+        if (!wrappedClick) throw new AssertionError("Missing attack click fixture");
+        ClassWriter lunarWriter = new ClassWriter(0);
+        lunar.accept(lunarWriter);
+        ClassNode lunarTransformed = read(LiveTransformer.transform(lunarWriter.toByteArray(), loader, true));
+        MethodNode lunarKeybinds = lunarTransformed.methods.stream().filter(method -> method.name.equals("handleKeybinds")).findFirst().orElseThrow();
+        boolean lunarHook = false;
+        for (var insn : lunarKeybinds.instructions) {
+            if (insn instanceof MethodInsnNode call && call.name.equals("lunarWrappedAttackClick")) {
+                lunarHook = call.getNext() instanceof MethodInsnNode hook && hook.name.equals("attackClick");
+            }
+        }
+        if (!lunarHook) throw new AssertionError("Lunar wrapped attack click was not hooked");
+        new Analyzer<>(new BasicVerifier()).analyze(lunarTransformed.name, lunarKeybinds);
+
         byte[] renderer;
         try (var stream = loader.getResourceAsStream("net/minecraft/client/renderer/GameRenderer.class")) {
             renderer = stream.readAllBytes();

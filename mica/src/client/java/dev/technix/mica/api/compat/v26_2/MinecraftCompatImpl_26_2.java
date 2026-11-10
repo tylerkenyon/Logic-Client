@@ -31,7 +31,6 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDevice;
 
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.lwjgl.vulkan.VK10.VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -39,12 +38,6 @@ import static org.lwjgl.vulkan.VK10.VK_IMAGE_LAYOUT_UNDEFINED;
 public final class MinecraftCompatImpl_26_2 implements MinecraftCompat {
 
     
-    private static final org.slf4j.Logger LOGGER =
-            org.slf4j.LoggerFactory.getLogger("mica");
-
-    
-    private static final AtomicBoolean NON_VULKAN_WARNING_LOGGED = new AtomicBoolean(false);
-
     @Override
     @NotNull
     public Optional<VulkanContext> currentVulkanContext() {
@@ -184,28 +177,7 @@ public final class MinecraftCompatImpl_26_2 implements MinecraftCompat {
             return null;
         }
         GpuDeviceBackend backend = MinecraftAccess.backend(device);
-        if (!(backend instanceof VulkanDevice)) {
-            
-            
-            
-            
-            
-            
-            
-            if (NON_VULKAN_WARNING_LOGGED.compareAndSet(false, true)) {
-                String message = "mica requires Vulkan - host GpuDevice is active as "
-                        + backend.getClass().getSimpleName() + ", not VulkanDevice. "
-                        + "The ImGui overlay will be invisible on this run. "
-                        + "Force Vulkan with --graphicsBackend vulkan "
-                        + "(build.gradle does this by default for the runClient task).";
-                if (Boolean.getBoolean("imgui.allowNonVulkan")) {
-                    LOGGER.info(message);
-                } else {
-                    LOGGER.warn(message);
-                }
-            }
-            return null;
-        }
+        if (!(backend instanceof VulkanDevice)) return null;
         return (VulkanDevice) backend;
     }
 
