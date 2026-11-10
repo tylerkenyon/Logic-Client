@@ -120,6 +120,14 @@ public final class ClickGuiRenderer implements OverlayElement {
         draw.addRectFilled(0, 0, context.width(), context.height(), LogicClient.THEME.color(light, "overlay", options.backgroundOpacity.get().floatValue() / 100 * opening));
         for (Category category : order) drawPanel(category);
         drawWatermark();
+        if (clickGui.updateProtectedCursor()) {
+            var window = Minecraft.getInstance().getWindow();
+            float x = ImGui.getMousePosX() * context.width() / Math.max(1, window.getScreenWidth());
+            float y = ImGui.getMousePosY() * context.height() / Math.max(1, window.getScreenHeight());
+            var foreground = ImGui.getForegroundDrawList();
+            foreground.addTriangleFilled(x, y, x + 4, y + 17, x + 14, y + 12, 0xff000000);
+            foreground.addTriangleFilled(x + 1, y + 2, x + 4.5f, y + 14, x + 11, y + 11, 0xffffffff);
+        }
         if (leftClick && !modeClicked) expandedMode = null;
     }
 

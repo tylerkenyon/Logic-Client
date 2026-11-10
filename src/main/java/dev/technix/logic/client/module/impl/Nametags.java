@@ -49,7 +49,7 @@ public final class Nametags extends Module {
         boolean pushed = OverlayRenderer.pushFont(ctx.renderer().font(FontFace.MEDIUM));
         try {
             for (var player : players) {
-                var head = player.getPosition(frame.partialTick()).add(0, player.getBbHeight() + .28, 0).subtract(frame.camera());
+                var head = WorldProjection.entityPosition(player, frame.partialTick()).add(0, player.getBbHeight() + .28, 0).subtract(frame.camera());
                 var clip = frame.matrix().transform(new Vector4f((float)head.x, (float)head.y, (float)head.z, 1));
                 if (clip.w < Camera.PROJECTION_Z_NEAR || Math.abs(clip.x) > clip.w || Math.abs(clip.y) > clip.w) continue;
                 String name = LogicClient.displayName(player.getName().getString());

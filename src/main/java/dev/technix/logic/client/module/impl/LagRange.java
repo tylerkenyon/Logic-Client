@@ -212,7 +212,7 @@ public final class LagRange extends Module {
         if (!active || pending.size() == 0 || !marker.get() || serverPosition == null
                 || !sameSession() || mc().options.getCameraType().isFirstPerson() || frame == null || frame.level() != level) return;
          
-        if (serverPosition.distanceToSqr(player.getPosition(frame.partialTick())) < 1.0e-6) return;
+        if (serverPosition.distanceToSqr(WorldProjection.entityPosition(player, frame.partialTick())) < 1.0e-6) return;
         WorldBox.draw(event.context(), frame, serverPosition,
             player.getBbWidth(), player.getBbHeight(), 0, color.get(), filled.get(), thickness.get().floatValue());
     }

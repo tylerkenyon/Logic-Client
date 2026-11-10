@@ -25,7 +25,7 @@ public final class SkeletonRenderer {
         var poses = parts.stream().map(part -> ((ModelPart) part).storePose()).toList();
         try {
             model.setupAnim(humanoid);
-            var position = entity.getPosition(frame.partialTick()).subtract(frame.camera());
+            var position = WorldProjection.entityPosition(entity, frame.partialTick()).subtract(frame.camera());
             Matrix4f base = new Matrix4f().translation((float) position.x, (float) position.y, (float) position.z)
                 .rotateY((float) Math.toRadians(180 - humanoid.bodyRot))
                 .scale(-humanoid.scale, -humanoid.scale, humanoid.scale).translate(0, -1.501f, 0);
