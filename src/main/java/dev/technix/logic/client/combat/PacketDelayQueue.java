@@ -29,6 +29,16 @@ public final class PacketDelayQueue<T> {
         return ready;
     }
 
+    public List<T> releaseSpan(long span) {
+        List<T> result = new ArrayList<>();
+        if (span <= 0 || entries.isEmpty()) return result;
+        long first = entries.getFirst().arrival();
+        while (!entries.isEmpty() && entries.getFirst().arrival() - first < span) {
+            result.add(entries.removeFirst().value());
+        }
+        return result;
+    }
+
     public List<T> drain() {
         List<T> result = new ArrayList<>();
         while (!entries.isEmpty()) result.add(entries.removeFirst().value());

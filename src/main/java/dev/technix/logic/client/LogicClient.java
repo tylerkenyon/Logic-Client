@@ -39,6 +39,9 @@ import net.minecraft.network.Connection;
 import io.netty.channel.ChannelFutureListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBundlePacket;
+import net.minecraft.network.protocol.game.ClientboundOpenSignEditorPacket;
+import net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl;
+import net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket;
 import dev.technix.logic.client.config.ConfigStore;
 import dev.technix.logic.client.gui.UiTheme;
 import dev.technix.logic.event.impl.ClientTickEvent;
@@ -167,6 +170,7 @@ public final class LogicClient implements ClientModInitializer {
     }
 
     public static boolean interceptOutgoing(Connection connection, Packet<?> packet, ChannelFutureListener listener, boolean flush) {
+        if (running() && instance.clientSpoofer.suppress(packet)) return true;
         var mc = Minecraft.getInstance();
         if (mc == null || !mc.isSameThread() || !running()) return false;
         var blink = MODULES.get(Blink.class);
@@ -224,14 +228,27 @@ public final class LogicClient implements ClientModInitializer {
         return running() && MODULES.get(AntiAction.class).blocksAttack();
     }
 
+    public static boolean interceptCommonPacket(Packet<?> packet, ClientCommonPacketListenerImpl listener) {
+        if (!running() || !instance.clientSpoofer.spoofPack(packet)) return false;
+        var pack = (ClientboundResourcePackPushPacket) packet;
+        for (var response : ClientSpoofer.packResponses(pack)) listener.send(response);
+        return true;
+    }
+
     public static boolean interceptPlayPacket(Packet<?> packet, ClientPacketListener connection) {
         if (!running()) return false;
+        if (interceptCommonPacket(packet, connection)) return true;
+        if (instance.clientSpoofer.protectsTranslations() && packet instanceof ClientboundOpenSignEditorPacket open
+                && Minecraft.getInstance().level != null
+                && Minecraft.getInstance().level.getBlockEntity(open.getPos()) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+            instance.clientSpoofer.protectSign(sign, open.isFrontText());
+        }
         MODULES.get(Blink.class).observeIncoming(packet);
         MODULES.get(LagRange.class).observeIncoming(packet);
         instance.anchorMacro.observeIncoming(packet);
         var jumpReset = MODULES.get(JumpReset.class);
         var backtrack = MODULES.get(Backtrack.class);
-        if (jumpReset.handlesPackets()) {
+        if (jumpReset.handlesPackets() || instance.clientSpoofer.enabled() && packet instanceof ClientboundBundlePacket) {
             if (packet instanceof ClientboundBundlePacket bundle) {
                 for (Packet<?> child : bundle.subPackets()) {
                     if (!interceptPlayPacket(child, connection)) applyPlayPacket(child, connection);

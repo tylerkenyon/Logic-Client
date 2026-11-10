@@ -28,6 +28,12 @@ import net.minecraft.world.phys.Vec3;
 
 
 public final class Backtrack extends Module {
+    private final ModeSetting mode = registerSetting(new ModeSetting("Mode", "How incoming updates are delayed", "Standard", "Standard", "Freeze"));
+    private final NumberSetting releaseDistance = registerSetting(new NumberSetting("Release distance", "Release when the real target exceeds this distance in blocks", 15, 1, 50, 0.5));
+    private final NumberSetting releaseTicks = registerSetting(new NumberSetting("Release after ticks", "Release everything after this many ticks; 0 disables", 0, 0, 400, 1));
+    private final BooleanSetting batchRelease = registerSetting(new BooleanSetting("Partial release", "Periodically release part of the queued packet history", false));
+    private final NumberSetting releaseAmount = registerSetting(new NumberSetting("Release amount", "Ticks of queued history to release each interval", 1, 1, 100, 1));
+    private final NumberSetting releaseInterval = registerSetting(new NumberSetting("Release interval", "Ticks between partial releases", 20, 1, 400, 1));
     private final NumberSetting delay = registerSetting(new NumberSetting("Delay", "Maximum packet hold in milliseconds", 150, 0, 500, 10));
     private final NumberSetting minRange = registerSetting(new NumberSetting("Min distance", "Minimum target distance", 1, 0, 6, 0.1));
     private final NumberSetting maxRange = registerSetting(new NumberSetting("Max distance", "Maximum target distance", 4, 1, 8, 0.1));
@@ -49,16 +55,35 @@ public final class Backtrack extends Module {
     private ClientPacketListener connection;
     private long lastAttack;
     private boolean holding;
-    private int cooldownTicks, smoothing;
+    private String activeMode = "Standard";
+    private int cooldownTicks, smoothing, freezeTicks;
     private Vec3 serverPosition, previousIndicator, currentIndicator;
     private float serverYaw;
 
     public Backtrack() {
         super("Backtrack", "Delays incoming updates during a recent fight.", Category.COMBAT);
-        rotate.visibleWhen(indicator::get);
-        filled.visibleWhen(indicator::get);
-        lineWidth.visibleWhen(indicator::get);
-        color.visibleWhen(indicator::get);
+        for (var setting : settings()) {
+            if (setting != mode) setting.visibleWhen(() -> !freezeMode());
+        }
+        releaseDistance.visibleWhen(this::freezeMode);
+        releaseTicks.visibleWhen(this::freezeMode);
+        batchRelease.visibleWhen(this::freezeMode);
+        releaseAmount.visibleWhen(() -> freezeMode() && batchRelease.get());
+        releaseInterval.visibleWhen(() -> freezeMode() && batchRelease.get());
+        rotate.visibleWhen(() -> !freezeMode() && indicator.get());
+        filled.visibleWhen(() -> !freezeMode() && indicator.get());
+        lineWidth.visibleWhen(() -> !freezeMode() && indicator.get());
+        color.visibleWhen(() -> !freezeMode() && indicator.get());
+    }
+
+    private boolean freezeMode() { return mode.get().equals("Freeze"); }
+
+    private void syncMode() {
+        if (!activeMode.equals(mode.get())) {
+            stop(true);
+            discard();
+            activeMode = mode.get();
+        }
     }
 
     public static boolean acceptsTargetType(Class<? extends Entity> type, boolean playersOnly) {
@@ -66,7 +91,8 @@ public final class Backtrack extends Module {
     }
 
     public void recordAttack(Entity entity) {
-        if (entity == null || !acceptsTargetType(entity.getClass(), playersOnly.get())
+        syncMode();
+        if (entity == null || !acceptsTargetType(entity.getClass(), freezeMode() || playersOnly.get())
                 || entity == mc().player || !entity.isAlive() || entity.isRemoved() || LogicClient.isBot(entity)) return;
         LivingEntity living = (LivingEntity) entity;
         if (target != living) {
@@ -79,6 +105,12 @@ public final class Backtrack extends Module {
             serverYaw = living.getYRot();
         }
         lastAttack = System.nanoTime();
+        if (freezeMode() && sameSession() && mc().player.position().distanceTo(serverPosition) <= releaseDistance.get() && !holding) {
+            holding = true;
+            freezeTicks = 0;
+            previousIndicator = currentIndicator = living.position();
+            smoothing = 3;
+        }
     }
 
     private boolean sameSession() {
@@ -101,6 +133,7 @@ public final class Backtrack extends Module {
     public String statusLabel() {
         if (holding && pending.size() > 0) return pending.size() + " queued";
         if (!sameSession() || target == null) return "No target";
+        if (freezeMode()) return "Ready";
         if (cooldownTicks > 0) return "Cooldown";
         if (requireMouse.get() && !mc().options.keyAttack.isDown()) return "Hold attack";
         if (requireWeapon.get()) {
@@ -111,6 +144,7 @@ public final class Backtrack extends Module {
     }
 
     public boolean intercept(Packet<?> packet, ClientPacketListener listener) {
+        syncMode();
         if (!sameSession()) { discard(); return false; }
         if (packet.isTerminal() || packet instanceof net.minecraft.network.protocol.common.ClientboundDisconnectPacket
                 || packet instanceof ClientboundLoginPacket || packet instanceof ClientboundRespawnPacket) {
@@ -123,7 +157,7 @@ public final class Backtrack extends Module {
             return true;
         }
         boolean barrier = packet instanceof ClientboundPlayerPositionPacket
-            || (packet instanceof ClientboundSetEntityMotionPacket motion && disableOnHit.get()
+            || (packet instanceof ClientboundSetEntityMotionPacket motion && !freezeMode() && disableOnHit.get()
                 && mc().player != null && motion.id() == mc().player.getId())
             || (packet instanceof ClientboundRemoveEntitiesPacket remove && remove.getEntityIds().contains(target.getId()));
         if (barrier) { stop(true); return false; }
@@ -132,6 +166,18 @@ public final class Backtrack extends Module {
                 || packet instanceof ClientboundSoundEntityPacket || packet instanceof ClientboundDamageEventPacket
                 || packet instanceof ClientboundHurtAnimationPacket
                 || (packet instanceof ClientboundEntityEventPacket status && status.getEntity(level) == target)) return false;
+        if (freezeMode()) {
+            if (!holding) return false;
+            trackPosition(packet);
+            if (!CombatTargets.canAct(mc()) || !target.isAlive() || target.isRemoved()
+                    || mc().player.position().distanceTo(serverPosition) > releaseDistance.get()) {
+                stop(true);
+                target = null;
+                return false;
+            }
+            if (!pending.offer(packet, freezeTicks)) { stop(true); target = null; return false; }
+            return true;
+        }
         if (!eligible()) { stop(true); return false; }
 
         if (!holding) {
@@ -201,7 +247,7 @@ public final class Backtrack extends Module {
                 codec.setBase(serverPosition);
             }
         } else pending.clear();
-        if (wasHolding) cooldownTicks = cooldown.get().intValue();
+        if (wasHolding && !freezeMode()) cooldownTicks = cooldown.get().intValue();
         previousIndicator = currentIndicator = null;
     }
 
@@ -213,11 +259,18 @@ public final class Backtrack extends Module {
         connection = null;
         previousIndicator = currentIndicator = serverPosition = null;
         cooldownTicks = 0;
+        freezeTicks = 0;
     }
 
     private void pump() {
+        syncMode();
         if (!sameSession()) { discard(); return; }
         if (!holding) return;
+        if (freezeMode()) {
+            if (!CombatTargets.canAct(mc()) || target == null || target.isRemoved() || !target.isAlive()
+                    || mc().player.position().distanceTo(serverPosition) > releaseDistance.get()) { stop(true); target = null; }
+            return;
+        }
         if (!eligible()) { stop(true); return; }
         for (Packet<?> packet : pending.release(System.nanoTime(), (long) (delay.get() * 1_000_000))) apply(packet, connection);
     }
@@ -229,20 +282,30 @@ public final class Backtrack extends Module {
     private void onTick(ClientTickEvent event) {
         if (cooldownTicks > 0) cooldownTicks--;
         pump();
+        if (holding && freezeMode()) {
+            freezeTicks++;
+            if (releaseTicks.get() > 0 && freezeTicks >= releaseTicks.get()) {
+                stop(true);
+                target = null;
+            } else if (batchRelease.get() && freezeTicks % releaseInterval.get().intValue() == 0) {
+                for (Packet<?> packet : pending.releaseSpan(releaseAmount.get().longValue())) apply(packet, connection);
+            }
+        }
         if (holding && currentIndicator != null) {
             previousIndicator = currentIndicator;
             currentIndicator = currentIndicator.lerp(serverPosition, smoothing > 0 ? 1.0 / smoothing-- : 1);
-            if (mc().hitResult instanceof net.minecraft.world.phys.EntityHitResult hit && hit.getEntity() != target) stop(true);
+            if (!freezeMode() && mc().hitResult instanceof net.minecraft.world.phys.EntityHitResult hit && hit.getEntity() != target) stop(true);
         }
     }
 
     @Subscribe
     private void onRender(Render2DEvent event) {
         var frame = WorldProjection.current();
-        if (!holding || !indicator.get() || currentIndicator == null || frame == null || frame.level() != level) return;
-        Vec3 position = previousIndicator.lerp(currentIndicator, frame.partialTick());
+        if (!holding || (!freezeMode() && !indicator.get()) || currentIndicator == null || frame == null || frame.level() != level) return;
+        Vec3 position = freezeMode() ? serverPosition : previousIndicator.lerp(currentIndicator, frame.partialTick());
         WorldBox.draw(event.context(), frame, position, target.getBbWidth(), target.getBbHeight(),
-            rotate.get() ? serverYaw : 0, color.get(), filled.get(), lineWidth.get().floatValue());
+            !freezeMode() && rotate.get() ? serverYaw : 0, freezeMode() ? "Blue" : color.get(),
+            !freezeMode() && filled.get(), freezeMode() ? 1 : lineWidth.get().floatValue());
     }
 
     @Override

@@ -26,12 +26,13 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 
  
 public final class LagRange extends Module {
     private final NumberSetting latency = registerSetting(new NumberSetting("Packet delay",
         "Maximum time in milliseconds to hold outgoing gameplay packets while approaching a target.", 150, 0, 500, 10));
+    private final NumberSetting range = registerSetting(new NumberSetting("Range",
+        "Start delaying packets within this distance of a target, in blocks.", 12.5, 1, 20, 0.5));
     private final BooleanSetting weapon = registerSetting(new BooleanSetting("Weapons only",
         "Activate while holding a sword or axe.", true));
     private final BooleanSetting sprintRelease = registerSetting(new BooleanSetting("Release on sprint stop",
@@ -55,8 +56,6 @@ public final class LagRange extends Module {
     private Vec3 serverPosition;
     private boolean active, approaching, released, replaying;
     private int potionPause;
-    private long rangeStarted;
-    private double rangeFrom, rangeTo;
 
     public boolean replaying() { return replaying; }
 
@@ -100,7 +99,7 @@ public final class LagRange extends Module {
             return;
         }
         target = null;
-        double best = searchRange(System.nanoTime());
+        double best = range.get();
         best *= best;
         for (var candidate : level.players()) {
             double distance = player.distanceToSqr(candidate);
@@ -114,19 +113,10 @@ public final class LagRange extends Module {
         pump();
     }
 
-    private double searchRange(long now) {
-        if (rangeStarted == 0 || now - rangeStarted > 10_000_000_000L) {
-            var random = ThreadLocalRandom.current();
-            rangeFrom = rangeStarted == 0 ? random.nextDouble() : rangeTo;
-            do { rangeTo = random.nextDouble(); } while (Math.abs(rangeFrom - rangeTo) < 0.2);
-            rangeStarted = now;
-        }
-        return 10 + 5 * (rangeFrom + (rangeTo - rangeFrom) * (now - rangeStarted) / 10_000_000_000.0);
-    }
-
     public boolean intercept(Connection sending, Packet<?> packet, ChannelFutureListener listener, boolean flush, boolean blinkReplay) {
         if (!enabled() || sending != connection || !sameSession()) return false;
-        if (replaying || blinkReplay) { observeSent(packet); return false; }
+        if (replaying) return false;
+        if (blinkReplay) { observeSent(packet); return false; }
         pump();
         if (packet instanceof ServerboundPlayerCommandPacket command && sprintRelease.get()
                 && command.getAction() == ServerboundPlayerCommandPacket.Action.STOP_SPRINTING) releaseForAction();
@@ -167,7 +157,10 @@ public final class LagRange extends Module {
         if (packets.isEmpty() || !sameSession()) return;
         replaying = true;
         try {
-            for (var entry : packets) connection.send(entry.packet(), entry.listener(), entry.flush());
+            for (var entry : packets) {
+                connection.send(entry.packet(), entry.listener(), entry.flush());
+                observeSent(entry.packet());
+            }
             if (!packets.getLast().flush()) connection.flushChannel();
         } finally { replaying = false; }
     }
@@ -233,7 +226,6 @@ public final class LagRange extends Module {
         serverPosition = null;
         active = approaching = released = false;
         potionPause = 0;
-        rangeStarted = 0;
     }
 
     @Override protected void onDisable() { releasePending(); clear(); }

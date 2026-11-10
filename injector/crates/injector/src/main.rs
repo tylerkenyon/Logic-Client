@@ -18,7 +18,6 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
  
-const CREDIT: &str = "Loader approach adapted from SkidSolutions/OpenPrestige";
  
 const FOLLOW_TIMEOUT: Duration = Duration::from_secs(180);
 
@@ -48,7 +47,7 @@ fn prepare_runtime(_offline: bool, _ask_for_updates: bool) -> Result<PathBuf, St
 }
 
 fn banner() -> String {
-    format!("{CYAN}Logic launcher{RESET}\n{DIM}{CREDIT}{RESET}\nMinecraft 26.2 / Fabric API / bundled injectable Mica\n\n")
+    format!("{CYAN}Logic launcher{RESET}\nMinecraft 26.2 / Fabric API / bundled injectable Mica\n\n")
 }
 
 fn step(label: &str, message: &str) {

@@ -10,6 +10,9 @@ import dev.technix.mica.internal.backend.vulkan.VulkanContext;
 import dev.technix.mica.internal.backend.vulkan.VulkanImGuiBackend;
 import imgui.ImGui;
 import imgui.ImGuiIO;
+import imgui.gl3.ImGuiImplGl3;
+import net.minecraft.client.Minecraft;
+import static org.lwjgl.glfw.GLFW.*;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VkCommandBuffer;
@@ -58,6 +61,9 @@ public final class ImGuiRenderer {
     public void reportCaptureFailure() {
         if (streamproof) captureStatus = CaptureStatus.FAILED;
     }
+    private ImGuiImplGl3 openGlBackend;
+    private boolean openGl;
+    private int frameWidth, frameHeight;
     private VulkanImGuiBackend vulkanBackend;
     private VulkanContext vulkanContext;
     private FrostedGlassRenderer frostedGlassRenderer;
@@ -107,11 +113,8 @@ public final class ImGuiRenderer {
         }
         if (streamproof && (captureStatus == CaptureStatus.FAILED || captureStatus == CaptureStatus.UNSUPPORTED)) return;
         vulkanContext = compat.currentVulkanContext().orElse(null);
-        if (vulkanContext == null) {
-            
-            
-            return;
-        }
+        openGl = vulkanContext == null && glfwGetCurrentContext() != 0;
+        if (vulkanContext == null && !openGl) return;
         ImGui.createContext();
         ImGuiIO io = ImGui.getIO();
         io.setIniFilename(null);
@@ -139,6 +142,12 @@ public final class ImGuiRenderer {
             return;
         }
         protectedMode = false;
+        if (openGl) {
+            openGlBackend = new ImGuiImplGl3();
+            if (!openGlBackend.init("#version 330 core")) throw new IllegalStateException("Cannot initialize ImGui OpenGL");
+            initialized = true;
+            return;
+        }
 
         vulkanBackend = new VulkanImGuiBackend(vulkanContext);
         vulkanBackend.init();
@@ -258,11 +267,16 @@ public final class ImGuiRenderer {
         ensureInitialized();
         if (!initialized) return false;
         refreshVulkanContext();
-        if (vulkanContext == null) {
-            return false;
+        if (vulkanContext == null && !openGl) return false;
+        Integer contextWidth = openGl ? null : vulkanContext.framebufferWidth();
+        Integer contextHeight = openGl ? null : vulkanContext.framebufferHeight();
+        if (openGl) {
+            try (MemoryStack stack = stackPush()) {
+                var w = stack.mallocInt(1); var h = stack.mallocInt(1);
+                glfwGetFramebufferSize(Minecraft.getInstance().getWindow().handle(), w, h);
+                contextWidth = w.get(0); contextHeight = h.get(0);
+            }
         }
-        Integer contextWidth = vulkanContext.framebufferWidth();
-        Integer contextHeight = vulkanContext.framebufferHeight();
         int width = contextWidth != null && contextWidth > 0 ? contextWidth : 1;
         int height = contextHeight != null && contextHeight > 0 ? contextHeight : 1;
 
@@ -273,13 +287,14 @@ public final class ImGuiRenderer {
                 ? 1.0f / 60.0f
                 : Math.min((now - lastFrameNanos) / 1_000_000_000.0f, 0.1f);
         lastFrameNanos = now;
+        frameWidth = width; frameHeight = height;
         beginFrame(width, height, deltaTime);
         return true;
     }
 
     public void beginFrame(int width, int height, float deltaTime) {
         ensureInitialized();
-        if (!initialized || (vulkanBackend == null && protectedOverlay == null)) {
+        if (!initialized || (vulkanBackend == null && protectedOverlay == null && openGlBackend == null)) {
             
             
             return;
@@ -288,6 +303,7 @@ public final class ImGuiRenderer {
         io.setDisplaySize(width, height);
         io.setDeltaTime(deltaTime > 0.0f ? deltaTime : 0.005f);
         if (protectedOverlay != null) protectedOverlay.newFrame();
+        else if (openGlBackend != null) openGlBackend.newFrame();
         else vulkanBackend.newFrame();
         ImGui.newFrame();
     }
@@ -404,7 +420,7 @@ public final class ImGuiRenderer {
 
     
     public boolean isFontTextureReady() {
-        if (protectedOverlay != null) return initialized;
+        if (protectedOverlay != null || openGlBackend != null) return initialized;
         return initialized && vulkanBackend != null && vulkanBackend.isFontTextureReady();
     }
 
@@ -415,9 +431,12 @@ public final class ImGuiRenderer {
             protectedOverlay.render();
             return;
         }
-        if (vulkanBackend == null) {
+        if (openGlBackend != null) {
+            ImGui.render();
+            openGlBackend.renderDrawData(ImGui.getDrawData());
             return;
         }
+        if (vulkanBackend == null) return;
         VkCommandBuffer commandBuffer = compat.activeCommandBuffer();
         if (commandBuffer == null) {
             return;
@@ -432,6 +451,7 @@ public final class ImGuiRenderer {
 
     
     public java.util.Optional<HostRenderTarget> currentHostRenderTarget(MinecraftCompat compat) {
+        if (openGl) return java.util.Optional.of(new HostRenderTarget(frameWidth, frameHeight, 0));
         VulkanContext ctx = compat.currentVulkanContext().orElse(null);
         if (ctx == null || ctx.getCurrentSceneImageView() == 0L) {
             return java.util.Optional.empty();
@@ -458,6 +478,7 @@ public final class ImGuiRenderer {
             frostedGlassRenderer.cleanup();
             frostedGlassRenderer = null;
         }
+        if (openGlBackend != null) { openGlBackend.shutdown(); openGlBackend = null; }
         if (vulkanBackend != null) {
             vulkanBackend.close();
             vulkanBackend = null;
@@ -476,7 +497,10 @@ public final class ImGuiRenderer {
         ImGui.destroyContext();
         initialized = false;
         vulkanContext = null;
+        openGl = false;
     }
+
+    public boolean isOpenGl() { return openGl; }
 
     public VulkanContext getVulkanContext() {
         return vulkanContext;
@@ -488,12 +512,14 @@ public final class ImGuiRenderer {
 
     
     public float viewportWidthOrDefault() {
+        if (openGl) return frameWidth;
         Integer w = vulkanContext != null ? vulkanContext.framebufferWidth() : null;
         return w != null && w > 0 ? w : 1.0f;
     }
 
     
     public float viewportHeightOrDefault() {
+        if (openGl) return frameHeight;
         Integer h = vulkanContext != null ? vulkanContext.framebufferHeight() : null;
         return h != null && h > 0 ? h : 1.0f;
     }
