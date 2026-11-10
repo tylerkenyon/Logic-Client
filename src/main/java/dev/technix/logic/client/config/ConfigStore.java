@@ -94,6 +94,11 @@ public final class ConfigStore {
             return;
         }
         if (setting instanceof RangeSetting range) {
+            if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber()) {
+                double fixed = value.getAsDouble();
+                range.set(new RangeSetting.Value(fixed, fixed));
+                return;
+            }
             if (!value.isJsonObject()) throw new IllegalArgumentException("Expected a range object");
             JsonObject object = value.getAsJsonObject();
             JsonElement low = object.get("low"), high = object.get("high");

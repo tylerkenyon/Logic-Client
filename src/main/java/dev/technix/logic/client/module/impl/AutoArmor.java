@@ -31,7 +31,7 @@ public final class AutoArmor extends Module {
     private final BooleanSetting enchantments = registerSetting(new BooleanSetting("Consider Protection", "Include the general Protection enchantment in armor ratings.", true));
     private final BooleanSetting avoidBinding = registerSetting(new BooleanSetting("Avoid Binding Curse", "Do not equip armor with Curse of Binding.", true));
     private final NumberSetting minimumDurability = registerSetting(new NumberSetting("Minimum durability", "Minimum remaining durability percentage for candidate armor.", 5, 0, 100, 1));
-    private final NumberSetting delay = registerSetting(new NumberSetting("Action delay", "Client ticks between inventory clicks.", 2, 0, 20, 1));
+    private final RangeSetting delay = registerSetting(new RangeSetting("Action delay", "Client ticks between inventory clicks.", 2, 2, 0, 20, 1));
     private Object owner;
     private int remaining;
 
@@ -43,7 +43,7 @@ public final class AutoArmor extends Module {
     @Subscribe
     private void tick(ClientTickEvent event) {
         var mc = mc();
-        if (owner != mc.player) { owner = mc.player; remaining = delay.get().intValue(); }
+        if (owner != mc.player) { owner = mc.player; remaining = delay.randomInt(); }
         if (mc.player == null || mc.level == null || mc.gameMode == null || !mc.player.isAlive() || mc.player.isSpectator()
                 || mc.isPaused() || LogicClient.MODULES.get(ClickGui.class).open()
                 || LogicClient.anchorBusy() || LogicClient.shieldBreakerBusy()
@@ -51,7 +51,7 @@ public final class AutoArmor extends Module {
                 || inventoryOnly.get() && !(mc.gui.screen() instanceof InventoryScreen)
                 || mc.gui.screen() != null && !(mc.gui.screen() instanceof InventoryScreen)
                 || mc.player.isUsingItem() || !mc.player.inventoryMenu.getCarried().isEmpty()) {
-            remaining = delay.get().intValue();
+            remaining = delay.randomInt();
             return;
         }
         if (remaining > 0) { remaining--; return; }
@@ -79,7 +79,7 @@ public final class AutoArmor extends Module {
                 if (!free) continue;
             }
             mc.gameMode.handleContainerInput(menu.containerId, worn.isEmpty() ? best : 5 + piece, 0, ContainerInput.QUICK_MOVE, mc.player);
-            remaining = delay.get().intValue();
+            remaining = delay.randomInt();
             return;
         }
     }

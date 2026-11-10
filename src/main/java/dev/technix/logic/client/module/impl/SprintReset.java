@@ -8,6 +8,7 @@ import dev.technix.logic.client.module.Module;
 import dev.technix.logic.client.setting.ModeSetting;
 import dev.technix.logic.client.setting.BooleanSetting;
 import dev.technix.logic.client.setting.NumberSetting;
+import dev.technix.logic.client.setting.RangeSetting;
 import dev.technix.logic.event.Subscribe;
 import dev.technix.logic.event.impl.AttackEvent;
 import net.minecraft.world.entity.LivingEntity;
@@ -18,12 +19,12 @@ public final class SprintReset extends Module {
         "Mode", "S-Tap moves backward, W-Tap releases forward, NoStop delays restarting sprint after a hit", "W-Tap", "S-Tap", "W-Tap", "NoStop"));
     private final NumberSetting chance = registerSetting(new NumberSetting(
         "Chance", "Chance to reset sprint on each eligible attack (%)", 100, 0, 100, 1));
-    private final NumberSetting delay = registerSetting(new NumberSetting(
-        "Reset delay", "Ticks to wait after attacking before resetting sprint", 0, 0, 10, 1));
-    private final NumberSetting duration = registerSetting(new NumberSetting(
-        "Tap duration", "Ticks to hold the tap or NoStop sprint pause", 1, 1, 10, 1));
-    private final NumberSetting cooldown = registerSetting(new NumberSetting(
-        "Cooldown", "Ticks after a reset before another attack can trigger it", 0, 0, 40, 1));
+    private final RangeSetting delay = registerSetting(new RangeSetting(
+        "Reset delay", "Ticks to wait after attacking before resetting sprint", 0, 0, 0, 10, 1));
+    private final RangeSetting duration = registerSetting(new RangeSetting(
+        "Tap duration", "Ticks to hold the tap or NoStop sprint pause", 1, 1, 1, 10, 1));
+    private final RangeSetting cooldown = registerSetting(new RangeSetting(
+        "Cooldown", "Ticks after a reset before another attack can trigger it", 0, 0, 0, 40, 1));
     private final BooleanSetting onlyGround = registerSetting(new BooleanSetting(
         "Only on ground", "Require the player to stay grounded during the reset", false));
     private final SprintResetTiming timing = new SprintResetTiming();
@@ -40,7 +41,7 @@ public final class SprintReset extends Module {
                 && CombatTargets.valid(mc, enemy, false, true, true)
                 && mc.player.isSprinting() && mc.options.keyUp.isDown()
                 && (!onlyGround.get() || mc.player.onGround())
-                && timing.request(delay.get().intValue(), duration.get().intValue(), cooldown.get().intValue(),
+                && timing.request(delay.randomInt(), duration.randomInt(), cooldown.randomInt(),
                     chance.get(), ThreadLocalRandom.current().nextDouble())) {
             resetMode = mode.get();
             owner = mc.player;

@@ -18,14 +18,14 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public final class ChestStealer extends Module {
     private final MultiSelectSetting containers = registerSetting(new MultiSelectSetting("Containers", "Storage menus to loot. Chests also includes barrels and ender chests.", List.of("Chests"), "Chests", "Shulker boxes", "Hoppers", "Dispensers"));
-    private final NumberSetting openDelay = registerSetting(new NumberSetting("Open delay", "Milliseconds to wait after opening a container.", 200, 0, 2000, 10));
+    private final RangeSetting openDelay = registerSetting(new RangeSetting("Open delay", "Milliseconds to wait after opening a container.", 200, 200, 0, 2000, 10));
     private final RangeSetting delay = registerSetting(new RangeSetting("Transfer delay", "Random milliseconds between stack transfers.", 80, 120, 0, 1000, 10));
     private final ModeSetting order = registerSetting(new ModeSetting("Slot order", "Order in which eligible stacks are transferred.", "First to last", "First to last", "Last to first", "Random"));
     private final ModeSetting filter = registerSetting(new ModeSetting("Item filter", "Choose whether the item list is included or excluded.", "All", "All", "Whitelist", "Blacklist"));
     private final StringSetting items = registerSetting(new StringSetting("Item IDs", "Comma-separated exact IDs, e.g. diamond, minecraft:iron_ingot. Maximum 64 characters.", "diamond,iron_ingot"));
     private final BooleanSetting autoClose = registerSetting(new BooleanSetting("Auto close", "Close when no eligible items remain.", true));
     private final BooleanSetting closeWhenFull = registerSetting(new BooleanSetting("Close when full", "Also close when eligible items remain but none fit in inventory.", false));
-    private final NumberSetting closeDelay = registerSetting(new NumberSetting("Close delay", "Milliseconds to wait before closing a finished container.", 200, 0, 2000, 10));
+    private final RangeSetting closeDelay = registerSetting(new RangeSetting("Close delay", "Milliseconds to wait before closing a finished container.", 200, 200, 0, 2000, 10));
     private AbstractContainerMenu activeMenu;
     private Object owner;
     private long nextAction, finishedSince = -1;
@@ -48,11 +48,11 @@ public final class ChestStealer extends Module {
         if (activeMenu != menu || owner != mc.player) {
             activeMenu = menu;
             owner = mc.player;
-            nextAction = now + openDelay.get().longValue();
+            nextAction = now + (long) openDelay.random();
             finishedSince = -1;
         }
         if (!menu.getCarried().isEmpty() || LogicClient.MODULES.get(ClickGui.class).open()) {
-            nextAction = now + openDelay.get().longValue();
+            nextAction = now + (long) openDelay.random();
             finishedSince = -1;
             return;
         }
@@ -76,8 +76,8 @@ public final class ChestStealer extends Module {
         }
         if (candidates.isEmpty()) {
             if (!autoClose.get() || eligibleRemaining && !closeWhenFull.get()) { finishedSince = -1; return; }
-            if (finishedSince < 0) finishedSince = now;
-            if (now - finishedSince >= closeDelay.get()) { screen.onClose(); reset(); }
+            if (finishedSince < 0) finishedSince = now + (long) closeDelay.random();
+            if (now >= finishedSince) { screen.onClose(); reset(); }
             return;
         }
         finishedSince = -1;
@@ -87,7 +87,7 @@ public final class ChestStealer extends Module {
             default -> candidates.getFirst();
         };
         mc.gameMode.handleContainerInput(menu.containerId, selected, 0, ContainerInput.QUICK_MOVE, mc.player);
-        nextAction = now + Math.round(ThreadLocalRandom.current().nextDouble(delay.low(), delay.high() + 1));
+        nextAction = now + (long) delay.random();
     }
 
     private int containerSlots(AbstractContainerMenu menu) {

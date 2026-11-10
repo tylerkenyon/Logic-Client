@@ -80,6 +80,13 @@ public final class LogicChecks {
         require(toggleSneak.isDown(), "Repeated Eagle updates must not flip toggle-to-sneak off");
         MovementKeys.setState(toggleSneak, false, true);
         require(!toggleSneak.isDown(), "Release toggle-to-sneak without leaving a stuck input");
+        var migratedTiming = new RangeSetting("Timing", "", 2, 2, 0, 20, 1);
+        dev.technix.logic.client.config.ConfigStore.readSetting(migratedTiming, new com.google.gson.JsonPrimitive(7));
+        require(migratedTiming.low() == 7 && migratedTiming.high() == 7 && migratedTiming.randomInt() == 7,
+            "Migrate a fixed timing to equal range endpoints");
+        var trigger = new dev.technix.logic.client.module.impl.Triggerbot();
+        require(trigger.settings().stream().anyMatch(setting -> setting.name().equals("Reaction time (ms)") && setting instanceof RangeSetting),
+            "Triggerbot exposes a reaction time range");
         MultiSelectSetting checks = new MultiSelectSetting("Checks", "", java.util.List.of("Pitch"), "Pitch", "Blocks", "Ground");
         checks.toggleOption("Blocks");
         require(checks.selected("Pitch") && checks.selected("Blocks"), "Multi-select retains existing selections when enabling another");

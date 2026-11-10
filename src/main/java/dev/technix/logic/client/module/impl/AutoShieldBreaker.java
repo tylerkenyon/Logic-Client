@@ -8,6 +8,7 @@ import dev.technix.logic.client.module.Category;
 import dev.technix.logic.client.module.Module;
 import dev.technix.logic.client.setting.BooleanSetting;
 import dev.technix.logic.client.setting.NumberSetting;
+import dev.technix.logic.client.setting.RangeSetting;
 import dev.technix.logic.event.Subscribe;
 import dev.technix.logic.event.impl.ClientTickEvent;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -19,14 +20,14 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.EntityHitResult;
 
 public final class AutoShieldBreaker extends Module {
-    private final NumberSetting switchDelay = registerSetting(new NumberSetting("Switch delay",
-        "Milliseconds to keep aiming at a raised shield before selecting an axe.", 50, 0, 1000, 10));
-    private final NumberSetting attackDelay = registerSetting(new NumberSetting("Attack delay",
-        "Milliseconds to wait after selecting the axe before attacking.", 100, 0, 1000, 10));
-    private final NumberSetting restoreDelay = registerSetting(new NumberSetting("Restore delay",
-        "Milliseconds to wait after the attack before restoring your original slot.", 100, 0, 1000, 10));
-    private final NumberSetting cooldown = registerSetting(new NumberSetting("Cooldown",
-        "Milliseconds between completed or cancelled attempts.", 500, 0, 3000, 50));
+    private final RangeSetting switchDelay = registerSetting(new RangeSetting("Switch delay",
+        "Milliseconds to keep aiming at a raised shield before selecting an axe.", 50, 50, 0, 1000, 10));
+    private final RangeSetting attackDelay = registerSetting(new RangeSetting("Attack delay",
+        "Milliseconds to wait after selecting the axe before attacking.", 100, 100, 0, 1000, 10));
+    private final RangeSetting restoreDelay = registerSetting(new RangeSetting("Restore delay",
+        "Milliseconds to wait after the attack before restoring your original slot.", 100, 100, 0, 1000, 10));
+    private final RangeSetting cooldown = registerSetting(new RangeSetting("Cooldown",
+        "Milliseconds between completed or cancelled attempts.", 500, 500, 0, 3000, 50));
     private final NumberSetting range = registerSetting(new NumberSetting("Range",
         "Maximum attack reach, limited by your normal interaction range.", 3, 1, 6, 0.1));
     private final BooleanSetting ignoreTeams = registerSetting(new BooleanSetting("Ignore teammates",
@@ -142,7 +143,7 @@ public final class AutoShieldBreaker extends Module {
         return -1;
     }
 
-    private static long nanos(NumberSetting setting) { return (long)(setting.get() * 1_000_000); }
+    private static long nanos(RangeSetting setting) { return (long)(setting.random() * 1_000_000); }
 
     private void selectSlot(int slot) throws ReflectiveOperationException {
         LogicClient.MODULES.get(LagRange.class).suspend();

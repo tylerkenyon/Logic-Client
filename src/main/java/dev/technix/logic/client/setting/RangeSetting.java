@@ -17,6 +17,15 @@ public final class RangeSetting extends Setting<RangeSetting.Value> {
     public double max() { return max; }
     public double low() { return get().low(); }
     public double high() { return get().high(); }
+    public double random() {
+        Value value = get();
+        return value.low() == value.high() ? value.low()
+            : java.util.concurrent.ThreadLocalRandom.current().nextDouble(value.low(), value.high());
+    }
+    public int randomInt() {
+        Value value = get();
+        return java.util.concurrent.ThreadLocalRandom.current().nextInt((int) value.low(), (int) value.high() + 1);
+    }
     private double snap(double value) {
         if (!Double.isFinite(value)) throw new IllegalArgumentException("Range endpoints must be finite");
         return Math.clamp(min + Math.round((Math.clamp(value, min, max) - min) / step) * step, min, max);
