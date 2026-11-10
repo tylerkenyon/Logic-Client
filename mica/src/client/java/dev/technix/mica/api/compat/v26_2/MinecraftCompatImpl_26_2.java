@@ -1,19 +1,67 @@
 package dev.technix.mica.api.compat.v26_2;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
+//? if <26.3 {
 import com.mojang.blaze3d.systems.CommandEncoder;
+//?} else {
+/*import com.mojang.renderpearl.api.commands.CommandEncoder;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.systems.CommandEncoderBackend;
+//?} else {
+/*import com.mojang.renderpearl.backend.api.CommandEncoderBackend;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.systems.GpuDevice;
+//?} else {
+/*import com.mojang.renderpearl.api.device.GpuDevice;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.systems.GpuDeviceBackend;
+//?} else {
+/*import com.mojang.renderpearl.backend.api.GpuDeviceBackend;
+*///?}
 import com.mojang.blaze3d.systems.RenderSystem;
+//? if <26.3 {
 import com.mojang.blaze3d.textures.GpuTexture;
+//?} else {
+/*import com.mojang.renderpearl.api.textures.GpuTexture;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.textures.GpuTextureView;
+//?} else {
+/*import com.mojang.renderpearl.api.textures.GpuTextureView;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
+//?} else {
+/*import com.mojang.renderpearl.backend.vulkan.VulkanCommandEncoder;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.vulkan.VulkanConst;
+//?} else {
+/*import com.mojang.renderpearl.backend.vulkan.VulkanConst;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.vulkan.VulkanDevice;
+//?} else {
+/*import com.mojang.renderpearl.backend.vulkan.VulkanDevice;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
+//?} else {
+/*import com.mojang.renderpearl.backend.vulkan.VulkanGpuTexture;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
+//?} else {
+/*import com.mojang.renderpearl.backend.vulkan.VulkanGpuTextureView;
+*///?}
+//? if <26.3 {
 import com.mojang.blaze3d.vulkan.VulkanQueue;
+//?} else {
+/*import com.mojang.renderpearl.backend.vulkan.VulkanQueue;
+*///?}
 import dev.technix.mica.api.MinecraftCompat;
 import dev.technix.mica.api.SpriteBounds;
 import dev.technix.mica.api.VanillaAtlases;

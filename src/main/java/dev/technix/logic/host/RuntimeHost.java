@@ -15,6 +15,19 @@ public final class RuntimeHost {
     private static boolean eventsInstalled;
     private RuntimeHost() {}
 
+    public static String minecraftVersion() throws ReflectiveOperationException {
+        ClassLoader loader = RuntimeHost.class.getClassLoader();
+        Class<?> fabric = Class.forName("net.fabricmc.loader.api.FabricLoader", true, loader);
+        Object instance = fabric.getMethod("getInstance").invoke(null);
+        var minecraft = (java.util.Optional<?>) fabric.getMethod("getModContainer", String.class).invoke(instance, "minecraft");
+        Class<?> container = Class.forName("net.fabricmc.loader.api.ModContainer", false, loader);
+        Object metadata = container.getMethod("getMetadata").invoke(minecraft.orElseThrow());
+        Class<?> modMetadata = Class.forName("net.fabricmc.loader.api.metadata.ModMetadata", false, loader);
+        Object version = modMetadata.getMethod("getVersion").invoke(metadata);
+        return (String) Class.forName("net.fabricmc.loader.api.Version", false, loader)
+            .getMethod("getFriendlyString").invoke(version);
+    }
+
     public static synchronized ClassLoader openPayload(String jar, ClassLoader parent) throws Exception {
         if (payload != null) throw new IllegalStateException("A Logic payload is already active; unload it first");
         boolean micaInParent;
@@ -82,7 +95,11 @@ public final class RuntimeHost {
     public static boolean mouse(Object button, int action) { return Boolean.TRUE.equals(invoke("mouse", button, action)); }
     public static boolean scroll(double x, double y) { return Boolean.TRUE.equals(invoke("scroll", x, y)); }
     public static void mouseMove(double x, double y) { invoke("mouseMove", x, y); }
+    public static boolean textInput(Object text) { return Boolean.TRUE.equals(invoke("textInput", text)); }
     public static boolean character(Object event) { return Boolean.TRUE.equals(invoke("character", event)); }
+    public static boolean foreignWindowEvent(Object window, Object event) {
+        return Boolean.TRUE.equals(invoke("foreignWindowEvent", window, event));
+    }
     public static void beforeGuiRender() { invoke("beforeGuiRender"); }
     public static void afterGuiRender() { invoke("afterGuiRender"); }
     public static void frame(Object tracker) { invoke("frame", tracker); }

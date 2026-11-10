@@ -23,6 +23,16 @@ fn main() {
     let jar = jar.canonicalize().expect("resolve payload path");
     println!("cargo:rerun-if-changed={}", jar.display());
     println!("cargo:rustc-env=LOGIC_PAYLOAD_JAR={}", jar.display());
+    println!("cargo:rerun-if-env-changed=LOGIC_PAYLOAD_26_3");
+    if let Some(path) = env::var_os("LOGIC_PAYLOAD_26_3") {
+        let path = PathBuf::from(path).canonicalize().expect("resolve 26.3 payload");
+        println!("cargo:rerun-if-changed={}", path.display());
+        println!("cargo:rustc-env=LOGIC_PAYLOAD_26_3_JAR={}", path.display());
+        println!("cargo:rustc-check-cfg=cfg(payload_26_3)");
+        println!("cargo:rustc-cfg=payload_26_3");
+    } else {
+        println!("cargo:rustc-check-cfg=cfg(payload_26_3)");
+    }
 }
 
 fn newest_remapped_jar() -> PathBuf {

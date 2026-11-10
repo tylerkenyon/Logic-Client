@@ -28,7 +28,7 @@ public class GameRendererMixin {
     }
 
     @ModifyArg(method = "renderLevel", at = @At(value = "INVOKE", ordinal = 0,
-        target = "Lnet/minecraft/client/renderer/ProjectionMatrixBuffer;getBuffer(Lorg/joml/Matrix4f;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;"), index = 0)
+        target = "Lnet/minecraft/client/renderer/ProjectionMatrixBuffer;getBuffer(Lorg/joml/Matrix4f;)" + dev.technix.logic.inject.LiveTransformer.PROJECTION_BUFFER), index = 0)
     private Matrix4f logic$captureProjection(Matrix4f projection) {
         if (!dev.technix.logic.client.LogicClient.running()) return projection;
         GameRenderer renderer = (GameRenderer) (Object) this;

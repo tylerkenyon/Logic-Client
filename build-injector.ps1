@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = $PSScriptRoot
 Push-Location $repoRoot
 $previousPayload = $env:LOGIC_PAYLOAD
+$previousPayload263 = $env:LOGIC_PAYLOAD_26_3
 $previousJavaHome = $env:JAVA_HOME
 $previousPath = $env:PATH
 try {
@@ -38,28 +39,38 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Unsupported Python version' }
     $gradleOptions = @()
     if ($Offline) { $gradleOptions += '--offline' }
-    & ./gradlew.bat -p mica build @gradleOptions
-    if ($LASTEXITCODE -ne 0) { throw 'Mica build failed' }
-    Copy-Item -LiteralPath 'mica/build/libs/mica-0.2.jar' -Destination 'libs/mica-0.2.jar'
-    & ./gradlew.bat build @gradleOptions
+    & ./gradlew.bat ':26.2:build' ':26.3:build' ':mica:26.2:build' ':mica:26.3:build' @gradleOptions
     if ($LASTEXITCODE -ne 0) { throw 'Logic build failed' }
     $version = ((Get-Content gradle.properties | Where-Object { $_ -match '^version=' }) -split '=',2)[1]
-    $mod = "build/libs/logic-$version.jar"
-    & python scripts/package-injection.py $mod build/injection/logic-payload.jar
-    if ($LASTEXITCODE -ne 0) { throw 'Payload packaging failed' }
+    $mods = foreach ($gameVersion in @('26.2', '26.3')) {
+        $mod = "versions/$gameVersion/build/libs/logic-$gameVersion-$version.jar"
+        & python scripts/package-injection.py $mod "build/injection/$gameVersion/logic-payload.jar" --thin | Write-Host
+        if ($LASTEXITCODE -ne 0) { throw "Payload packaging failed for $gameVersion" }
+        $mod
+    }
+    if ((Get-FileHash 'build/injection/26.2/logic-runtime.jar').Hash -ne (Get-FileHash 'build/injection/26.3/logic-runtime.jar').Hash) {
+        throw 'The versioned payloads require different shared runtimes'
+    }
+    Copy-Item -LiteralPath 'build/injection/26.2/logic-runtime.jar' -Destination 'build/injection/logic-runtime.jar'
+    Copy-Item -LiteralPath 'build/injection/26.2/logic-payload.jar' -Destination 'build/injection/logic-payload.jar'
     $env:LOGIC_PAYLOAD = (Resolve-Path 'build/injection/logic-payload.jar').Path
+    $env:LOGIC_PAYLOAD_26_3 = (Resolve-Path 'build/injection/26.3/logic-payload.jar').Path
     & cargo test --manifest-path injector/Cargo.toml
     if ($LASTEXITCODE -ne 0) { throw 'Rust tests failed' }
     & cargo build --manifest-path injector/Cargo.toml --release
     if ($LASTEXITCODE -ne 0) { throw 'Rust build failed' }
     if ($SmokeTest) {
+        $env:LOGIC_PAYLOAD_26_3 = $null
         & ./injector/tests/smoke.ps1
         if (!$?) { throw 'Native JVM smoke test failed' }
     }
     New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
     Copy-Item -LiteralPath 'injector/target/release/LogicLauncher.exe','injector/target/release/logic_native.dll' -Destination $OutputDirectory
-    Copy-Item -LiteralPath $mod,'libs/mica-0.2.jar','injector/README.md','injector/UPSTREAM.md' -Destination $OutputDirectory
-    Copy-Item -LiteralPath 'build/injection/logic-payload.jar' -Destination (Join-Path $OutputDirectory 'logic-payload.jar')
+    Copy-Item -LiteralPath $mods -Destination $OutputDirectory
+    Copy-Item -LiteralPath 'injector/README.md','injector/UPSTREAM.md' -Destination $OutputDirectory
+    foreach ($gameVersion in @('26.2', '26.3')) {
+        Copy-Item -LiteralPath "build/injection/$gameVersion/logic-payload.jar" -Destination (Join-Path $OutputDirectory "logic-payload-$gameVersion.jar")
+    }
     Copy-Item -LiteralPath 'build/injection/logic-runtime.jar' -Destination (Join-Path $OutputDirectory 'logic-runtime.jar')
     Copy-Item -LiteralPath 'docs/configuration.md' -Destination (Join-Path $OutputDirectory 'CONFIGURATION.md')
     $updateFiles = @{}
@@ -74,6 +85,7 @@ try {
     Write-Output "Built launcher, native loader and mod jars in $OutputDirectory."
 } finally {
     $env:LOGIC_PAYLOAD = $previousPayload
+    $env:LOGIC_PAYLOAD_26_3 = $previousPayload263
     $env:JAVA_HOME = $previousJavaHome
     $env:PATH = $previousPath
     Pop-Location

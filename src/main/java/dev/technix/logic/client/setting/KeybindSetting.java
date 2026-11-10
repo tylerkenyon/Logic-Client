@@ -1,5 +1,6 @@
 package dev.technix.logic.client.setting;
 
+import dev.technix.mica.internal.GameInput;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 
@@ -21,7 +22,7 @@ public final class KeybindSetting extends Setting<Integer> {
         if (get() == GLFW.GLFW_KEY_UNKNOWN) return false;
         long window = Minecraft.getInstance().getWindow().handle();
         return get() <= GLFW.GLFW_MOUSE_BUTTON_LAST
-            ? GLFW.glfwGetMouseButton(window, get()) == GLFW.GLFW_PRESS
-            : GLFW.glfwGetKey(window, get()) == GLFW.GLFW_PRESS;
+            ? GameInput.boundMouseDown(window, get())
+            : GameInput.keyDown(window, get());
     }
 }

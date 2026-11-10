@@ -3,13 +3,13 @@ The Fabric mod jar remains unchanged for normal installation.
 """
 from io import BytesIO
 from pathlib import Path
-from zipfile import ZipFile, ZIP_DEFLATED
+from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 import argparse
 import hashlib
 import json
 
 
-def flatten(source: Path, destination: Path):
+def flatten(source: Path, destination: Path, thin=False):
     entries = {}
     dependencies = []
     def visit(data, label):
@@ -40,15 +40,19 @@ def flatten(source: Path, destination: Path):
     if not any(name.endswith('.dll') and 'imgui' in name.lower() for name in entries):
         raise ValueError('Missing Windows imgui native library')
     destination.parent.mkdir(parents=True, exist_ok=True)
+    def is_payload(name):
+        return name.startswith(('dev/technix/logic/', 'dev/technix/mica/', 'assets/logic/', 'assets/mica/')) \
+            and not name.startswith('dev/technix/logic/host/')
+
     with ZipFile(destination, 'w', ZIP_DEFLATED) as output:
         for name, data in sorted(entries.items()):
-            output.writestr(name, data)
+            if not thin or is_payload(name):
+                output.writestr(ZipInfo(name), data, ZIP_DEFLATED)
     runtime = destination.with_name('logic-runtime.jar')
     with ZipFile(runtime, 'w', ZIP_DEFLATED) as output:
         for name, data in sorted(entries.items()):
-            client = name.startswith(('dev/technix/logic/', 'dev/technix/mica/', 'assets/logic/', 'assets/mica/'))
-            if not client or name.startswith('dev/technix/logic/host/'):
-                output.writestr(name, data)
+            if not is_payload(name):
+                output.writestr(ZipInfo(name), data, ZIP_DEFLATED)
     print(f'Shared runtime: {runtime}')
     print(f'Payload: {destination}, {len(entries)} entries, {len(dependencies)} nested dependencies')
     print('SHA256:', hashlib.sha256(destination.read_bytes()).hexdigest())
@@ -58,5 +62,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('mod', type=Path)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--thin', action='store_true', help='Keep dependencies only in the shared runtime JAR')
     args = parser.parse_args()
-    flatten(args.mod, args.output)
+    flatten(args.mod, args.output, args.thin)

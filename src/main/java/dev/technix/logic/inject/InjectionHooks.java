@@ -1,5 +1,6 @@
 package dev.technix.logic.inject;
 
+import dev.technix.mica.internal.GameInput;
 import dev.technix.logic.Logic;
 import dev.technix.logic.client.LogicClient;
 import dev.technix.logic.client.module.impl.Backtrack;
@@ -31,6 +32,7 @@ public final class InjectionHooks {
     static volatile boolean active;
     static boolean ownsMica;
     private static long lastFrame;
+    private static String overlayState;
     private static Field useDelay;
     private static Field worldProjectionBuffer;
 
@@ -42,6 +44,17 @@ public final class InjectionHooks {
             case "mouse" -> mouse((MouseButtonInfo)args[0], (int)args[1]);
             case "scroll" -> scroll((double)args[0], (double)args[1]);
             case "character" -> character((CharacterEvent)args[0]);
+            case "textInput" -> textInput((String)args[0]);
+            //? if >=26.3 {
+            /*case "foreignWindowEvent" -> {
+                var window = (com.mojang.blaze3d.platform.Window) args[0];
+                var event = (org.lwjgl.sdl.SDL_Event) args[1];
+                int type = event.type();
+                yield active && type >= org.lwjgl.sdl.SDLEvents.SDL_EVENT_WINDOW_FIRST
+                    && type <= org.lwjgl.sdl.SDLEvents.SDL_EVENT_WINDOW_LAST
+                    && event.window().windowID() != org.lwjgl.sdl.SDLVideo.SDL_GetWindowID(window.handle());
+            }
+            *///?}
             case "packet" -> packet((PacketListener)args[0], (Packet<?>)args[1]);
             case "hideVanillaNametag" -> active && LogicClient.hideVanillaNametag(args[0]);
             case "rewriteOutgoing" -> active ? LogicClient.rewriteOutgoing((Packet<?>)args[0]) : args[0];
@@ -86,19 +99,29 @@ public final class InjectionHooks {
         worldProjectionBuffer.setAccessible(true);
     }
 
+    private static boolean textInput(String text) {
+        if (!active || !gui().open()) return false;
+        text.codePoints().forEach(gui()::handleCharacter);
+        return true;
+    }
+
     private static ClickGui gui() { return LogicClient.MODULES.get(ClickGui.class); }
 
     public static boolean keyboard(int action, KeyEvent key) {
         if (!active) return false;
         ClickGui gui = gui();
         if (gui.open()) {
-            gui.handleKey(key.key(), action);
+            gui.handleKey(GameInput.key(key.key()), action);
             return true;
         }
-        Logic.events().post(new KeyPressEvent(key.key(), action));
+        Logic.events().post(new KeyPressEvent(GameInput.key(key.key()), action));
         if (gui.open()) return true;
         if (ownsMica) {
-            ActiveRenderers.feedKey(key.key(), key.scancode(), action);
+            //? if <26.3 {
+ActiveRenderers.feedKey(key.key(), key.scancode(), action);
+//?} else {
+/*ActiveRenderers.feedKey(GameInput.key(key.key()), key.key(), action);
+*///?}
             return ActiveRenderers.wantsKeyboard();
         }
         return false;
@@ -106,8 +129,8 @@ public final class InjectionHooks {
 
     public static boolean mouse(MouseButtonInfo button, int action) {
         if (!active) return false;
-        if (gui().open() && gui().bindMouse(button.button(), action)) return true;
-        if (gui().open() || ownsMica) ActiveRenderers.feedMouseButton(button.button(), action != GLFW.GLFW_RELEASE);
+        if (gui().open() && gui().bindMouse(GameInput.mouse(button.button()), action)) return true;
+        if (gui().open() || ownsMica) ActiveRenderers.feedMouseButton(GameInput.mouse(button.button()), action != GLFW.GLFW_RELEASE);
         return gui().open() || (ownsMica && ActiveRenderers.wantsMouse());
     }
 
@@ -133,7 +156,19 @@ public final class InjectionHooks {
     }
 
     public static void beforeGuiRender() { if (active && ownsMica) InjectedMica.beforeRender(); }
-    public static void afterGuiRender() { if (active && ownsMica) InjectedMica.afterRender(); }
+    public static void afterGuiRender() {
+        if (!active || !ownsMica) return;
+        InjectedMica.afterRender();
+        var overlay = ActiveRenderers.get();
+        if (overlay == null) return;
+        var renderer = overlay.internalRenderer();
+        String state = "enabled=" + renderer.isEnabled() + ", OpenGL=" + renderer.isOpenGl()
+            + ", capture=" + overlay.captureStatus();
+        if (!state.equals(overlayState)) {
+            overlayState = state;
+            NativeBridge.log("overlay frame: " + state);
+        }
+    }
 
     public static void frame(DeltaTracker tracker) {
         if (!active) return;

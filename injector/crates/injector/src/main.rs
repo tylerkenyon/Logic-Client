@@ -10,6 +10,8 @@ mod paths;
 mod platform;
 #[cfg(windows)]
 mod update;
+#[cfg(windows)]
+mod gui;
 
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -47,7 +49,7 @@ fn prepare_runtime(_offline: bool, _ask_for_updates: bool) -> Result<PathBuf, St
 }
 
 fn banner() -> String {
-    format!("{CYAN}Logic launcher{RESET}\nMinecraft 26.2 / Fabric API / bundled injectable Mica\n\n")
+    format!("{CYAN}Logic launcher{RESET}\nMinecraft 26.2 and 26.3 / Fabric API / bundled injectable Mica\n\n")
 }
 
 fn step(label: &str, message: &str) {
@@ -104,6 +106,10 @@ fn real_main() -> ExitCode {
     if let Err(error) = paths::initialize() {
         fail("storage", &error.to_string());
         return ExitCode::from(1);
+    }
+    #[cfg(windows)]
+    if args.is_empty() {
+        return gui::launch();
     }
     let interactive = args.is_empty()
         || matches!(args.as_slice(), [flag] if flag == "--console" || flag == "--offline");
@@ -335,7 +341,7 @@ fn pick_process() -> Option<u32> {
 fn draw(processes: &[platform::JavaProcess], selected: usize) {
     let mut out = String::from("\x1b[2J\x1b[H");
     out.push_str(&banner());
-    out.push_str("Minecraft 26.2 (Fabric, 64-bit) - Up/Down select, Enter inject, Esc quit\n\n");
+    out.push_str("Minecraft 26.2 and 26.3 (Fabric, 64-bit) - Up/Down select, Enter inject, Esc quit\n\n");
     if processes.is_empty() {
         out.push_str("  waiting for a Minecraft JVM (java/javaw)...\n");
     }

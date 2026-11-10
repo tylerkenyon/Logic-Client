@@ -45,6 +45,8 @@ replay_*.log
 # Runtime logs
 /logs/
 /mica/logs/
+/versions/*/logs/
+/mica/versions/*/logs/
 
 # Local dependencies; the tracked Mica JAR is required by the Gradle build
 /libs/

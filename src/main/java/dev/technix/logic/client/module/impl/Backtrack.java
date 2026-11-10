@@ -159,7 +159,11 @@ public final class Backtrack extends Module {
         boolean barrier = packet instanceof ClientboundPlayerPositionPacket
             || (packet instanceof ClientboundSetEntityMotionPacket motion && !freezeMode() && disableOnHit.get()
                 && mc().player != null && motion.id() == mc().player.getId())
+            //? if <26.3 {
             || (packet instanceof ClientboundRemoveEntitiesPacket remove && remove.getEntityIds().contains(target.getId()));
+            //?} else {
+            /*|| (packet instanceof ClientboundRemoveEntitiesPacket remove && remove.entityIds().contains(target.getId()));
+            *///?}
         if (barrier) { stop(true); return false; }
 
         if (packet instanceof ClientboundSetHealthPacket || packet instanceof ClientboundSoundPacket
@@ -202,14 +206,26 @@ public final class Backtrack extends Module {
         boolean moved = false;
         if (packet instanceof ClientboundMoveEntityPacket move && move.getEntity(level) == target) {
             if (move.hasPosition()) {
+                //? if <26.3 {
                 serverPosition = codec.decode(move.getXa(), move.getYa(), move.getZa());
+                //?} else {
+                /*serverPosition = move.getPositionDelta().decode(codec).endPosition();
+                *///?}
                 codec.setBase(serverPosition);
                 moved = true;
             }
             if (move.hasRotation()) serverYaw = move.getYRot();
         } else if (packet instanceof ClientboundEntityPositionSyncPacket sync && sync.id() == target.getId()) {
+            //? if <26.3 {
             serverPosition = sync.values().position();
+            //?} else {
+            /*serverPosition = sync.position().endPosition();
+            *///?}
+            //? if <26.3 {
             serverYaw = sync.values().yRot();
+            //?} else {
+            /*serverYaw = sync.yRot();
+            *///?}
             codec.setBase(serverPosition);
             moved = true;
         } else if (packet instanceof ClientboundTeleportEntityPacket teleport && teleport.id() == target.getId()) {

@@ -15,10 +15,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MouseHandlerMixin {
 
 
+    //? if <26.3 {
     @Inject(method = "onMove(JDD)V", at = @At("HEAD"))
     private void imguiOnMove(long windowPointer, double xPos, double yPos, CallbackInfo ci) {
         ActiveRenderers.feedMouseMove(xPos, yPos);
     }
+    //?} else {
+    /*@Inject(method = "onMove(JDDDD)V", at = @At("HEAD"))
+    private void imguiOnMove(long windowPointer, double xPos, double yPos, double deltaX, double deltaY, CallbackInfo ci) {
+        ActiveRenderers.feedMouseMove(xPos, yPos);
+    }
+    *///?}
 
 
     @Inject(method = "onButton(JLnet/minecraft/client/input/MouseButtonInfo;I)V",
@@ -26,7 +33,7 @@ public abstract class MouseHandlerMixin {
     private void imguiOnButton(long windowPointer, MouseButtonInfo buttonInfo, int action,
                                CallbackInfo ci) {
         boolean pressed = action != GLFW.GLFW_RELEASE;
-        ActiveRenderers.feedMouseButton(buttonInfo.button(), pressed);
+        ActiveRenderers.feedMouseButton(dev.technix.mica.internal.GameInput.mouse(buttonInfo.button()), pressed);
         if (ActiveRenderers.wantsMouse()) {
             ci.cancel();
         }

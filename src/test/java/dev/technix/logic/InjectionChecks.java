@@ -42,7 +42,12 @@ public final class InjectionChecks {
                     && call.owner.equals("dev/technix/logic/host/RuntimeHost")) return true;
                 return false;
             });
-            if (!hasHooks && (mica || !target.endsWith("GuiRenderer"))) throw new AssertionError("No hooks: " + target);
+            //? if <26.3 {
+            boolean requiresHooks = mica || !target.endsWith("GuiRenderer");
+            //?} else {
+            /*boolean requiresHooks = !target.endsWith("GuiRenderer");
+            *///?}
+            if (!hasHooks && requiresHooks) throw new AssertionError("No hooks: " + target);
             if (hasHooks) {
                 boolean rejected = false;
                 try { LiveTransformer.transform(transformed, loader, mica); }
@@ -89,8 +94,8 @@ public final class InjectionChecks {
             renderer = stream.readAllBytes();
         }
         ClassNode wrapped = read(renderer);
-        String projectionDescriptor = "(Lorg/joml/Matrix4f;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;";
-        String wrapperDescriptor = "(Lnet/minecraft/client/renderer/ProjectionMatrixBuffer;Lorg/joml/Matrix4f;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;";
+        String projectionDescriptor = "(Lorg/joml/Matrix4f;)" + LiveTransformer.PROJECTION_BUFFER;
+        String wrapperDescriptor = "(Lnet/minecraft/client/renderer/ProjectionMatrixBuffer;Lorg/joml/Matrix4f;)" + LiveTransformer.PROJECTION_BUFFER;
         boolean replaced = false;
         for (var method : wrapped.methods) {
             if (!method.name.equals("renderLevel")) continue;
@@ -126,7 +131,7 @@ public final class InjectionChecks {
         for (var method : after.methods) if (method.instructions.size() > 0) {
             new Analyzer<>(new BasicVerifier()).analyze(after.name, method);
         }
-        System.out.println("Injection checks passed: " + LiveTransformer.TARGETS.length + " Minecraft 26.2 targets, Sodium-style projection wrapping, Mica modes, bytecode verification, schema preservation and duplicate rejection.");
+        System.out.println("Injection checks passed: " + LiveTransformer.TARGETS.length + " Minecraft targets, Sodium-style projection wrapping, Mica modes, bytecode verification, schema preservation and duplicate rejection.");
     }
 
     private static ClassNode read(byte[] bytes) {
