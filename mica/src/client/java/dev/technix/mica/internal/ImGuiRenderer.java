@@ -64,6 +64,7 @@ public final class ImGuiRenderer {
     private ImGuiImplGl3 openGlBackend;
     private boolean openGl;
     private int frameWidth, frameHeight;
+    private int openGlFramebuffer;
     private VulkanImGuiBackend vulkanBackend;
     private VulkanContext vulkanContext;
     private FrostedGlassRenderer frostedGlassRenderer;
@@ -433,7 +434,20 @@ public final class ImGuiRenderer {
         }
         if (openGlBackend != null) {
             ImGui.render();
-            openGlBackend.renderDrawData(ImGui.getDrawData());
+            var gameTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
+            if (!(gameTarget.getColorTextureView() instanceof com.mojang.blaze3d.opengl.GlTextureView color)) return;
+            int previous = org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+            if (openGlFramebuffer == 0) openGlFramebuffer = org.lwjgl.opengl.GL30.glGenFramebuffers();
+            try {
+                org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER, openGlFramebuffer);
+                org.lwjgl.opengl.GL30.glFramebufferTexture2D(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER,
+                    org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0, org.lwjgl.opengl.GL11.GL_TEXTURE_2D, color.glId(), color.fboMipLevel());
+                if (org.lwjgl.opengl.GL30.glCheckFramebufferStatus(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER)
+                        != org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_COMPLETE) throw new IllegalStateException("Minecraft OpenGL target is incomplete");
+                openGlBackend.renderDrawData(ImGui.getDrawData());
+            } finally {
+                org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER, previous);
+            }
             return;
         }
         if (vulkanBackend == null) return;
@@ -478,7 +492,11 @@ public final class ImGuiRenderer {
             frostedGlassRenderer.cleanup();
             frostedGlassRenderer = null;
         }
-        if (openGlBackend != null) { openGlBackend.shutdown(); openGlBackend = null; }
+        if (openGlBackend != null) {
+            openGlBackend.shutdown(); openGlBackend = null;
+            if (openGlFramebuffer != 0) org.lwjgl.opengl.GL30.glDeleteFramebuffers(openGlFramebuffer);
+            openGlFramebuffer = 0;
+        }
         if (vulkanBackend != null) {
             vulkanBackend.close();
             vulkanBackend = null;

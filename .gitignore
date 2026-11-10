@@ -47,3 +47,5 @@ replay_*.log
 /mica/logs
 /libs
 *.gz
+/mica/logs
+/libs

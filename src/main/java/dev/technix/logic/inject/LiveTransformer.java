@@ -176,18 +176,22 @@ public final class LiveTransformer implements Opcodes {
     }
 
     private static void hookAttackClick(MethodNode keybinds) {
-         
         MethodInsnNode attackClick = null;
         int attackReads = 0;
         for (AbstractInsnNode insn : keybinds.instructions) {
             if (insn instanceof FieldInsnNode key && key.getOpcode() == GETFIELD
                     && key.owner.equals("net/minecraft/client/Options") && key.name.equals("keyAttack")) {
                 if (++attackReads == 2) {
-                    AbstractInsnNode next = key.getNext();
-                    while (next != null && next.getOpcode() < 0) next = next.getNext();
-                    if (!(next instanceof MethodInsnNode consume) || !consume.owner.equals("net/minecraft/client/KeyMapping")
-                            || !consume.name.equals("consumeClick") || !consume.desc.equals("()Z")) break;
-                    attackClick = consume;
+                    // Lunar wraps consumeClick in a boolean-returning mixin operation.
+                    int remaining = 24;
+                    for (AbstractInsnNode next = key.getNext(); next != null && remaining-- > 0; next = next.getNext()) {
+                        if (next instanceof MethodInsnNode method && method.desc.endsWith(")Z")) {
+                            AbstractInsnNode branch = next.getNext();
+                            while (branch != null && branch.getOpcode() < 0) branch = branch.getNext();
+                            if (branch instanceof JumpInsnNode) { attackClick = method; break; }
+                        }
+                        if (next instanceof FieldInsnNode field && field.name.equals("keyAttack")) break;
+                    }
                 } else if (attackReads > 2) break;
             }
             if (attackClick != null && insn instanceof MethodInsnNode attack && attack.owner.equals("net/minecraft/client/Minecraft")
