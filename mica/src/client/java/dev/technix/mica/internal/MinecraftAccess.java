@@ -55,6 +55,20 @@ public final class MinecraftAccess {
 
     public static void verify() {   }
 
+    record OpenGlTarget(int texture, int mipLevel) { }
+
+    static OpenGlTarget openGlTarget() {
+        var target = net.minecraft.client.Minecraft.getInstance().gameRenderer.mainRenderTarget();
+        //? if <26.3 {
+        if (target.getColorTextureView() instanceof com.mojang.blaze3d.opengl.GlTextureView color) {
+        //?} else {
+        /*if (target.getColorTextureView() instanceof com.mojang.renderpearl.backend.opengl.GlTextureView color) {
+        *///?}
+            return new OpenGlTarget(color.glId(), color.fboMipLevel());
+        }
+        return null;
+    }
+
     public static boolean hasOpenGlContext() {
         //? if <26.3 {
         return org.lwjgl.glfw.GLFW.glfwGetCurrentContext() != 0;

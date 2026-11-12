@@ -9,7 +9,8 @@
     "GuiRendererMixin",
     "KeyboardHandlerMixin",
     "MouseHandlerMixin",
-    "VulkanCommandEncoderAccessor"
+    "VulkanCommandEncoderAccessor",
+    "WindowMixin"
   ],
   "injectors": {
     "defaultRequire": 1

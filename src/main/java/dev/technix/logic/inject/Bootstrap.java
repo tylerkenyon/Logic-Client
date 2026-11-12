@@ -28,6 +28,7 @@ public final class Bootstrap {
                 RuntimeHost.class.getMethod("blockAttack");
                 RuntimeHost.class.getMethod("blockMouseLook");
                 RuntimeHost.class.getMethod("afterKeybinds");
+                RuntimeHost.class.getMethod("attackDispatched");
                 RuntimeHost.class.getMethod("hideVanillaNametag", Object.class);
                 RuntimeHost.class.getMethod("outgoing", Object.class, Object.class, Object.class, boolean.class);
             } catch (NoSuchMethodException oldRuntime) {

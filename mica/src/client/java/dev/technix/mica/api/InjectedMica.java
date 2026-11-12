@@ -1,9 +1,7 @@
 package dev.technix.mica.api;
 
-import dev.technix.mica.api.compat.v26_2.MinecraftCompatImpl_26_2;
 import dev.technix.mica.internal.ActiveRenderers;
 import dev.technix.mica.internal.MinecraftAccess;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.minecraft.client.Minecraft;
 
  
@@ -14,7 +12,7 @@ public final class InjectedMica {
 
     public static void prepare() {
         MinecraftAccess.verify();
-        if (!new MinecraftCompatImpl_26_2().isVulkanRendererActive()
+        if (!MinecraftCompat.current().isVulkanRendererActive()
                 && !MinecraftAccess.hasOpenGlContext()) {
             throw new IllegalStateException("Mica requires a Vulkan or OpenGL renderer");
         }
@@ -24,7 +22,7 @@ public final class InjectedMica {
         if (!Minecraft.getInstance().isSameThread()) throw new IllegalStateException("Start Mica on the client thread");
         if (ActiveRenderers.get() != null) return ActiveRenderers.get();
         prepare();
-        owned = OverlayRenderer.builder().withMinecraftCompat(new MinecraftCompatImpl_26_2()).withFrostedGlass(false).build();
+        owned = OverlayRenderer.builder().withMinecraftCompat(MinecraftCompat.current()).withFrostedGlass(false).build();
         ActiveRenderers.set(owned);
          
         return owned;
@@ -42,6 +40,11 @@ public final class InjectedMica {
     }
 
     public static void afterRender() {
-        if (owned != null) owned.renderOverlay();
+        if (owned == null) return;
+        //? if <26.3 {
+        owned.renderOverlay();
+        //?} else {
+        /*owned.renderFrame();
+        *///?}
     }
 }

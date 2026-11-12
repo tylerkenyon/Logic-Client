@@ -167,7 +167,7 @@ public final class ClickGui extends Module {
         /*long flags = org.lwjgl.sdl.SDLVideo.SDL_GetWindowFlags(window);
         boolean hide = shouldHideCursor(open, wasMouseGrabbed, mc.isWindowActive()
             && (flags & org.lwjgl.sdl.SDLVideo.SDL_WINDOW_MINIMIZED) == 0
-            && org.lwjgl.sdl.SDLVideo.SDL_GetWindowFullscreenMode(window) == null,
+            && !mc.getWindow().isExclusiveFullscreen(),
             overlay == null ? CaptureStatus.DISABLED : overlay.captureStatus());
         if (hide && !cursorHidden) {
             cursorHidden = org.lwjgl.sdl.SDLMouse.SDL_HideCursor();

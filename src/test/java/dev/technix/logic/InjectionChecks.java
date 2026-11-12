@@ -42,11 +42,8 @@ public final class InjectionChecks {
                     && call.owner.equals("dev/technix/logic/host/RuntimeHost")) return true;
                 return false;
             });
-            //? if <26.3 {
-            boolean requiresHooks = mica || !target.endsWith("GuiRenderer");
-            //?} else {
-            /*boolean requiresHooks = !target.endsWith("GuiRenderer");
-            *///?}
+            boolean requiresHooks = !target.endsWith("GuiRenderer") && (mica || !target.endsWith(".Window"));
+            assertOverlayHooks(after, mica);
             if (!hasHooks && requiresHooks) throw new AssertionError("No hooks: " + target);
             if (hasHooks) {
                 boolean rejected = false;
@@ -132,6 +129,40 @@ public final class InjectionChecks {
             new Analyzer<>(new BasicVerifier()).analyze(after.name, method);
         }
         System.out.println("Injection checks passed: " + LiveTransformer.TARGETS.length + " Minecraft targets, Sodium-style projection wrapping, Mica modes, bytecode verification, schema preservation and duplicate rejection.");
+    }
+
+    private static void assertOverlayHooks(ClassNode node, boolean mica) {
+        //? if <26.3 {
+        String renderOwner = "net/minecraft/client/gui/render/GuiRenderer";
+        int expectedHead = 1;
+        //?} else {
+        /*String renderOwner = "net/minecraft/client/renderer/GameRenderer";
+        int expectedHead = 0;
+        *///?}
+        int expectedTail = mica && node.name.equals(renderOwner) ? 1 : 0;
+        int head = 0;
+        int tail = 0;
+        for (var method : node.methods) {
+            for (var instruction : method.instructions) {
+                if (!(instruction instanceof MethodInsnNode call)
+                        || !call.owner.equals("dev/technix/logic/host/RuntimeHost")) continue;
+                if (!call.name.equals("beforeGuiRender") && !call.name.equals("afterGuiRender")) continue;
+                if (!node.name.equals(renderOwner) || !method.name.equals("render") || !method.desc.equals("()V")) {
+                    throw new AssertionError("Overlay hook installed outside render()V: " + node.name);
+                }
+                if (call.name.equals("beforeGuiRender")) {
+                    head++;
+                } else {
+                    tail++;
+                    if (call.getNext().getOpcode() != Opcodes.RETURN) {
+                        throw new AssertionError("Overlay hook does not run at render tail");
+                    }
+                }
+            }
+        }
+        if (head != expectedHead * expectedTail || tail != expectedTail) {
+            throw new AssertionError("Unexpected Mica callback count in " + node.name + ": " + head + "/" + tail);
+        }
     }
 
     private static ClassNode read(byte[] bytes) {

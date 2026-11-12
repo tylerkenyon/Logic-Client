@@ -97,6 +97,11 @@ public final class ActiveRenderers {
         return r != null && r.wantsToCaptureKeyboard();
     }
 
+    public static void renderFrame() {
+        OverlayRenderer renderer = ACTIVE.get();
+        if (renderer != null) renderer.renderFrame();
+    }
+
     public static boolean prepareForFrame() {
         OverlayRenderer r = ACTIVE.get();
         return r != null && r.prepareForFrame();

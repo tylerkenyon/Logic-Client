@@ -144,7 +144,7 @@ tasks.register('verifyProtectedOverlay', JavaExec) {
 }
 
 processResources {
-    def metadata = [version: project.version, minecraft_version: gameVersion, loader_version: project.loader_version]
+    def metadata = [version: project.version, targetMinecraftVersion: gameVersion, loader_version: project.loader_version]
     inputs.properties(metadata)
     filteringCharset "UTF-8"
 
@@ -240,7 +240,7 @@ tasks.register('verifyFonts', JavaExec) {
 }
 tasks.register('verifyOverlayHost', JavaExec) {
     group = 'verification'
-    description = 'Exercises the SDL overlay against a separate host OpenGL window.'
+    description = 'Exercises the SDL overlay with and without a host OpenGL context.'
     dependsOn tasks.named('testClasses'), tasks.named('clientClasses')
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'dev.technix.mica.SdlOverlayHostCheck'

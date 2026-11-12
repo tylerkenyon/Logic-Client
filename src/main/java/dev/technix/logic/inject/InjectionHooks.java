@@ -47,14 +47,7 @@ public final class InjectionHooks {
             case "character" -> character((CharacterEvent)args[0]);
             case "textInput" -> textInput((String)args[0]);
             //? if >=26.3 {
-            /*case "foreignWindowEvent" -> {
-                var window = (com.mojang.blaze3d.platform.Window) args[0];
-                var event = (org.lwjgl.sdl.SDL_Event) args[1];
-                int type = event.type();
-                yield active && type >= org.lwjgl.sdl.SDLEvents.SDL_EVENT_WINDOW_FIRST
-                    && type <= org.lwjgl.sdl.SDLEvents.SDL_EVENT_WINDOW_LAST
-                    && event.window().windowID() != org.lwjgl.sdl.SDLVideo.SDL_GetWindowID(window.handle());
-            }
+            /*case "foreignWindowEvent" -> active && GameInput.isForeignWindowEvent(args[0], args[1]);
             *///?}
             case "packet" -> packet((PacketListener)args[0], (Packet<?>)args[1]);
             case "hideVanillaNametag" -> active && LogicClient.hideVanillaNametag(args[0]);
@@ -76,6 +69,7 @@ public final class InjectionHooks {
                     case "attack" -> attack((Entity)args[0]);
                     case "keybinds" -> keybinds();
                     case "afterKeybinds" -> { if (active) LogicClient.afterKeybinds(); }
+                    case "attackDispatched" -> { if (active) LogicClient.attackDispatched(); }
                     case "startTick" -> LogicClient.startTick();
                     case "endTick" -> LogicClient.endTick();
                     case "stopClient" -> LogicClient.stopClient();

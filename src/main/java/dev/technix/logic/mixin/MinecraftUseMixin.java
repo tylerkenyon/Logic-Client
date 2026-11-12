@@ -49,4 +49,16 @@ public class MinecraftUseMixin {
     private void logic$preventAttack(CallbackInfoReturnable<Boolean> ci) {
         if (LogicClient.blockAttack()) ci.setReturnValue(false);
     }
+
+    @Inject(method = "startAttack", require = 2, allow = 2, at = {
+        @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;attack(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/entity/Entity;)V"),
+        //? if <26.3 {
+        @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;piercingAttack(Lnet/minecraft/world/item/component/PiercingWeapon;)V")
+        //?} else {
+        /*@At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;piercingAttack(Lnet/minecraft/world/item/component/SwingAnimation;Lnet/minecraft/world/item/component/PiercingWeapon;)V")
+        *///?}
+    })
+    private void logic$attackDispatched(CallbackInfoReturnable<Boolean> ci) {
+        LogicClient.attackDispatched();
+    }
 }
