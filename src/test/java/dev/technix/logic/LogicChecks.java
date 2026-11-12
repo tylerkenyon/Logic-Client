@@ -1,7 +1,6 @@
 package dev.technix.logic;
 
 import dev.technix.logic.client.combat.CombatMath;
-import dev.technix.logic.client.combat.HitSelectTiming.AttackSource;
 import dev.technix.logic.client.combat.PacketDelayQueue;
 import dev.technix.logic.client.module.impl.UseRateGate;
 import dev.technix.logic.client.module.impl.AimAssist;
@@ -31,35 +30,37 @@ public final class LogicChecks {
             && !module.enabledByDefault() && module.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_UNKNOWN,
             "Hit Select defaults to disabled and unbound in Combat");
         var settings = module.settings().stream().collect(java.util.stream.Collectors.toMap(Setting::name, setting -> setting));
-        var charge = (NumberSetting) settings.get("Charge threshold");
-        require(Math.abs(charge.get() - 0.95) < 1e-9 && charge.min() == 0.10 && charge.max() == 1.00,
-            "Hit Select charge threshold default and range");
-        var delay = (NumberSetting) settings.get("Delay ticks");
-        require(delay.get() == 4 && delay.min() == 2 && delay.max() == 40, "Hit Select delay default and range");
-        delay.set(6.4);
-        require(delay.get() == 6, "Hit Select delay uses whole client ticks");
-        for (String name : java.util.List.of("Players", "Hostiles", "Weapon required", "Exclude friends")) {
-            require(Boolean.TRUE.equals(settings.get(name).get()), "Hit Select enables " + name + " by default");
-        }
-        for (String name : java.util.List.of("Passive", "Require critical", "Require sprint")) {
-            require(Boolean.FALSE.equals(settings.get(name).get()), "Hit Select disables " + name + " by default");
-        }
+        var preference = (ModeSetting) settings.get("Preference");
+        require(preference.options().equals(java.util.List.of("BURST", "CRIT", "COMBO", "TIMER"))
+            && preference.get().equals("BURST"), "Port Vanish's four preferences and default");
+        require(settings.get("Burst HurtTime").visible() && !settings.get("Timer Delay").visible(), "Show Burst controls by default");
+        preference.set("CRIT");
+        require(settings.get("Crit Require Falling").visible() && !settings.get("Burst HurtTime").visible(), "Show Crit controls in Crit");
+        preference.set("COMBO");
+        require(settings.get("Combo Require Damage").visible() && !settings.get("Crit Require Falling").visible(), "Show Combo controls in Combo");
+        preference.set("TIMER");
+        var timerDelay = (RangeSetting) settings.get("Timer Delay");
+        require(timerDelay.visible() && timerDelay.low() == 350 && timerDelay.high() == 450, "Use Vanish's Timer interval");
+        require(Boolean.TRUE.equals(settings.get("Gate Auto Combat").get())
+            && Boolean.TRUE.equals(settings.get("Cancel Manual").get()), "Gate both attack sources by default");
+        require(Math.abs((Double) settings.get("Cooldown Threshold").get() - 0.92) < 1e-9,
+            "Use Vanish's cooldown threshold");
 
         var timing = new dev.technix.logic.client.combat.HitSelectTiming();
-        require(timing.beginCheck(10, 4) && !timing.beginCheck(10, 4), "Only evaluate Hit Select once per tick");
-        require(!timing.selectClick(false, true, () -> true), "A released queued click cannot become a Triggerbot attack");
-        require(timing.dispatched(10) == null, "A cancelled click cannot start the delay");
-        require(timing.beginCheck(11, 4), "A check without a dispatch does not start the delay");
-        require(timing.selectClick(true, true, () -> true) && timing.dispatched(11) == AttackSource.HELD,
-            "A held click takes priority when Triggerbot is also ready");
-        require(!timing.beginCheck(12, 4) && !timing.beginCheck(14, 4), "Keep the delay between dispatched attacks");
-        require(timing.beginCheck(15, 4), "Resume exactly at the delay boundary");
-        require(!timing.selectClick(false, false, () -> false), "An idle player must wait for Triggerbot readiness");
-        require(timing.selectClick(false, false, () -> true) && timing.dispatched(15) == AttackSource.TRIGGERBOT
-            && timing.dispatched(15) == null, "Dispatch a ready Triggerbot attack once without physical input");
-        require(!timing.beginCheck(16, 4), "Triggerbot dispatches use the same Hit Select delay");
-        timing.resetDelay();
-        require(timing.beginCheck(17, 4), "A new session clears the delay");
+        timing.observe(1000, 0, true);
+        require(timing.openingHit() && timing.timerReady(1000), "An opening attack has no previous Timer delay");
+        require(!timing.tradeReady(1099, 100, 0) && timing.tradeReady(1100, 100, 0), "First-hit wait expires at its threshold");
+        timing.observe(1050, 10, true);
+        timing.observe(1060, 9, true);
+        require(!timing.tradeReady(1099, 200, 50) && timing.tradeReady(1100, 200, 50),
+            "An incoming hit clears first-hit wait and starts trade delay without restarting as hurt time decays");
+        timing.dispatched(1100, 400);
+        require(!timing.openingHit() && !timing.timerReady(1499) && timing.timerReady(1500),
+            "Only a dispatch advances the opening state and Timer interval");
+        timing.observe(2001, 0, false);
+        require(timing.openingHit() && !timing.receivedHit(), "Looking away clears the fight state");
+        timing.reset();
+        require(timing.openingHit() && timing.timerReady(1000), "A new session clears the Timer interval");
     }
 
     public static void main(String[] args) {

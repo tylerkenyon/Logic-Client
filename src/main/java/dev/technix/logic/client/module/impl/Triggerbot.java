@@ -45,7 +45,7 @@ public final class Triggerbot extends Module {
      
     public boolean attackClick(boolean manualClick) {
         if (manualClick) {
-            attackClickSeen = true;
+            markClickSeen();
             return true;
         }
         if (!automaticAttackReady()) return false;
@@ -60,8 +60,12 @@ public final class Triggerbot extends Module {
     }
 
     public void recordAutomaticAttack() {
-        attackClickSeen = true;
+        markClickSeen();
         schedule();
+    }
+
+    public void markClickSeen() {
+        attackClickSeen = true;
     }
 
     private LivingEntity target() {
