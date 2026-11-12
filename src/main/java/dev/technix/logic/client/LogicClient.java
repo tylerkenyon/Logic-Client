@@ -37,6 +37,7 @@ import dev.technix.logic.client.module.impl.JumpReset;
 import dev.technix.logic.client.module.impl.SprintReset;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.Connection;
 import io.netty.channel.ChannelFutureListener;
 import net.minecraft.network.protocol.Packet;
@@ -154,7 +155,10 @@ public final class LogicClient implements ClientModInitializer {
         if (client == null || !client.running || client.shutdownRequested) return;
         client.hitSelect.startTick();
         MODULES.get(JumpReset.class).startTick();
-        client.eagle.startTick();
+    }
+
+    public static void afterPlayerInput(LocalPlayer player) {
+        if (running() && Minecraft.getInstance().player == player) instance.eagle.applyInput(player);
     }
 
     public static void beforeKeybinds() {
@@ -307,7 +311,6 @@ public final class LogicClient implements ClientModInitializer {
         client.guiConfig.updateMovement(client.clickGui.open());
         client.snapTap.update();
         Logic.events().post(new ClientTickEvent());
-        client.eagle.update();
         client.applyCaptureSettings();
         client.clickGui.updateProtectedCursor();
         client.config.tick();

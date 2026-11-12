@@ -70,6 +70,7 @@ public final class InjectionHooks {
                     case "keybinds" -> keybinds();
                     case "afterKeybinds" -> { if (active) LogicClient.afterKeybinds(); }
                     case "attackDispatched" -> { if (active) LogicClient.attackDispatched(); }
+                    case "afterPlayerInput" -> { if (active) LogicClient.afterPlayerInput((net.minecraft.client.player.LocalPlayer) args[0]); }
                     case "startTick" -> LogicClient.startTick();
                     case "endTick" -> LogicClient.endTick();
                     case "stopClient" -> LogicClient.stopClient();
