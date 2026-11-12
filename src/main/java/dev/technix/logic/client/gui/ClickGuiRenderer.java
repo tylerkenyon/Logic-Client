@@ -1,7 +1,7 @@
 package dev.technix.logic.client.gui;
 
+import dev.technix.mica.internal.GameInput;
 import com.google.gson.JsonObject;
-import com.mojang.blaze3d.platform.InputConstants;
 import dev.technix.logic.Logic;
 import dev.technix.logic.client.LogicClient;
 import dev.technix.logic.client.module.Category;
@@ -352,8 +352,7 @@ public final class ClickGuiRenderer implements OverlayElement {
 
     private float drawBind(Object target, int key, float areaLeft, float areaRight, float y, boolean active) {
         String idleLabel = key == GLFW.GLFW_KEY_UNKNOWN ? "Bind"
-            : (target instanceof KeybindSetting && key <= GLFW.GLFW_MOUSE_BUTTON_LAST ? InputConstants.Type.MOUSE : InputConstants.Type.KEYSYM)
-                .getOrCreate(key).getDisplayName().getString();
+            : GameInput.describe(key, target instanceof KeybindSetting && key <= GLFW.GLFW_MOUSE_BUTTON_LAST).getDisplayName().getString();
         boolean listening = clickGui.isBinding(target);
         String label = listening ? "Press key" : idleLabel;
         float width = Math.clamp(textWidth(label, 12) + 10, 32, 84);

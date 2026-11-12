@@ -34,6 +34,7 @@ public final class ClientSpoofer extends Module {
 
     public void protectSign(SignBlockEntity sign, boolean front) {
         if (!protectsTranslations()) return;
+        //? if <26.3 {
         var text = sign.getText(front);
         for (int i = 0; i < 4; i++) {
             var raw = text.getMessage(i, false);
@@ -41,6 +42,15 @@ public final class ClientSpoofer extends Module {
             text = text.setMessage(i, safeSignComponent(raw), safeSignComponent(filtered));
         }
         sign.setText(text, front);
+        //?} else {
+        /*var slot = front ? net.minecraft.world.level.block.entity.SignTextSlot.FRONT
+            : net.minecraft.world.level.block.entity.SignTextSlot.BACK;
+        var text = sign.getText(slot);
+        sign.setText(new net.minecraft.world.level.block.entity.SignText(
+            text.getMessages(false).stream().map(ClientSpoofer::safeSignComponent).toList(),
+            text.getMessages(true).stream().map(ClientSpoofer::safeSignComponent).toList(),
+            text.getColor(), text.hasGlowingText()), slot);
+        *///?}
     }
 
     public boolean protectsTranslations() { return enabled() && protectTranslations.get(); }

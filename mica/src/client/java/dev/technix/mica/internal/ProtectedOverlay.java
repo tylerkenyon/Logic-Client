@@ -10,12 +10,6 @@ import com.sun.jna.win32.W32APIOptions;
 import imgui.ImGui;
 import imgui.gl3.ImGuiImplGl3;
 import net.minecraft.client.Minecraft;
-import org.lwjgl.glfw.GLFWNativeWin32;
-import org.lwjgl.opengl.GL;
-import org.lwjgl.opengl.GLCapabilities;
-import org.lwjgl.system.MemoryStack;
-
-import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
 
  
@@ -25,6 +19,7 @@ public final class ProtectedOverlay implements AutoCloseable {
         boolean GetWindowDisplayAffinity(HWND window, IntByReference affinity);
         int GetWindowLong(HWND window, int index);
         int SetWindowLong(HWND window, int index, int value);
+        boolean SetLayeredWindowAttributes(HWND window, int colorKey, byte alpha, int flags);
     }
 
     public interface VersionApi extends StdCallLibrary {
@@ -35,13 +30,14 @@ public final class ProtectedOverlay implements AutoCloseable {
         int DwmIsCompositionEnabled(IntByReference enabled);
     }
 
-    private long window;
+    private final ProtectedWindow window = new ProtectedWindow();
     private ImGuiImplGl3 backend;
-    private GLCapabilities capabilities;
     private boolean shown;
     private CaptureApi captureApi;
     private HWND hwnd;
     private long fontRevision = -1;
+
+    public long windowHandle() { return window.handle(); }
 
     private static void requireSupportedWindows() {
         OSVERSIONINFOEX version = new OSVERSIONINFOEX();
@@ -59,9 +55,9 @@ public final class ProtectedOverlay implements AutoCloseable {
      
     public void verifyCaptureProtection() {
         IntByReference affinity = new IntByReference();
-        if (window == 0 || captureApi == null || !captureApi.GetWindowDisplayAffinity(hwnd, affinity)
+        if (window.handle() == 0 || captureApi == null || !captureApi.GetWindowDisplayAffinity(hwnd, affinity)
                 || affinity.getValue() != 0x11) {
-            if (window != 0) glfwHideWindow(window);
+            if (window.handle() != 0) hide();
             shown = false;
             throw new IllegalStateException("Capture exclusion was lost; overlay hidden");
         }
@@ -72,26 +68,10 @@ public final class ProtectedOverlay implements AutoCloseable {
             throw new UnsupportedOperationException("Capture exclusion requires Windows 10 2004 or later");
         }
         requireSupportedWindows();
-        long previous = glfwGetCurrentContext();
-        GLCapabilities previousCapabilities = capabilitiesOrNull();
-        try {
-            glfwDefaultWindowHints();
-            glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-            glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-            glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
-            glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
-            glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
-            glfwWindowHint(GLFW_MOUSE_PASSTHROUGH, GLFW_TRUE);
-            glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
-            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-            glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-            window = glfwCreateWindow(64, 64, "Mica overlay", 0, 0);
-            if (window == 0) throw new IllegalStateException("Cannot create the protected overlay window");
-            if (glfwGetWindowAttrib(window, GLFW_TRANSPARENT_FRAMEBUFFER) != GLFW_TRUE) {
-                throw new IllegalStateException("Transparent overlay framebuffers are unavailable");
-            }
-            hwnd = new HWND(Pointer.createConstant(GLFWNativeWin32.glfwGetWin32Window(window)));
+        window.init(() -> {
+            long nativeHandle = window.nativeHandle();
+            if (nativeHandle == 0) throw new IllegalStateException("Cannot find the overlay window handle");
+            hwnd = new HWND(Pointer.createConstant(nativeHandle));
             CaptureApi api = Native.load("user32", CaptureApi.class, W32APIOptions.DEFAULT_OPTIONS);
             captureApi = api;
              
@@ -101,26 +81,30 @@ public final class ProtectedOverlay implements AutoCloseable {
             if (previousStyle == 0 && Native.getLastError() != 0) {
                 throw new IllegalStateException("Cannot configure the overlay window: " + Native.getLastError());
             }
+            //? if >=26.3 {
+            /*// Windows mouse passthrough requires both TRANSPARENT and LAYERED.
+            api.SetWindowLong(hwnd, -20, api.GetWindowLong(hwnd, -20) | 0x00080000);
+            if (!api.SetLayeredWindowAttributes(hwnd, 0, (byte) 255, 2)) {
+                throw new IllegalStateException("Cannot configure overlay mouse passthrough: " + Native.getLastError());
+            }
+            *///?}
             if (!api.SetWindowDisplayAffinity(hwnd, 0x11)) {
                 throw new IllegalStateException("Windows rejected capture exclusion: " + Native.getLastError());
             }
             verifyCaptureProtection();
-            glfwMakeContextCurrent(window);
-            capabilities = GL.createCapabilities();
-            glfwSwapInterval(0);
             backend = new ImGuiImplGl3();
             if (!backend.init("#version 330 core")) throw new IllegalStateException("Cannot initialize overlay OpenGL");
-        } finally {
-            glfwDefaultWindowHints();
-            glfwMakeContextCurrent(previous);
-            GL.setCapabilities(previousCapabilities);
-        }
+        });
+    }
+
+    boolean prepareHost() {
+        if (window.prepareHost()) return true;
+        if (shown) hide();
+        return false;
     }
 
     public void newFrame() {
         withContext(() -> {
-             
-             
             if (fontRevision != ImGuiFonts.revision() || !ImGui.getIO().getFonts().isBuilt()) {
                 backend.destroyFontsTexture();
             }
@@ -131,64 +115,63 @@ public final class ProtectedOverlay implements AutoCloseable {
 
     public void render() {
         var mc = Minecraft.getInstance();
-        long host = mc.getWindow().handle();
-         
-        boolean visible = mc.isWindowActive() && glfwGetWindowAttrib(host, GLFW_ICONIFIED) == GLFW_FALSE
-            && glfwGetWindowMonitor(host) == 0;
-        if (!visible) {
-            if (shown) glfwHideWindow(window);
-            shown = false;
+        render(mc.getWindow().handle(), mc.isWindowActive());
+    }
+
+    public void render(long host, boolean hostActive) {
+        if (!hostActive || !window.canShow(host)) {
+            if (shown) hide();
             return;
         }
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            var x = stack.mallocInt(1); var y = stack.mallocInt(1);
-            var w = stack.mallocInt(1); var h = stack.mallocInt(1);
-            glfwGetWindowPos(host, x, y);
-            glfwGetWindowSize(host, w, h);
-            glfwSetWindowPos(window, x.get(0), y.get(0));
-            glfwSetWindowSize(window, Math.max(1, w.get(0)), Math.max(1, h.get(0)));
+        window.follow(host);
+        //? if >=26.3 {
+        /*if (!shown && !captureApi.SetWindowDisplayAffinity(hwnd, 0x11)) {
+            throw new IllegalStateException("Windows rejected overlay capture exclusion: " + Native.getLastError());
         }
+        *///?}
         drawFrame();
-        if (!shown) glfwShowWindow(window);
-        shown = true;
+        if (!shown) {
+            verifyCaptureProtection();
+            window.show();
+            shown = true;
+        }
     }
 
     public void drawFrame() {
         verifyCaptureProtection();
         withContext(() -> {
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                var w = stack.mallocInt(1); var h = stack.mallocInt(1);
-                glfwGetFramebufferSize(window, w, h);
-                glViewport(0, 0, w.get(0), h.get(0));
-            }
+            window.setViewport();
             glClearColor(0, 0, 0, 0);
             glClear(GL_COLOR_BUFFER_BIT);
             backend.renderDrawData(ImGui.getDrawData());
-            glfwSwapBuffers(window);
+            window.swap();
         });
     }
 
-    private static GLCapabilities capabilitiesOrNull() {
-        try { return GL.getCapabilities(); } catch (IllegalStateException ignored) { return null; }
+    private void withContext(Runnable action) {
+        window.withContext(action);
     }
 
-    private void withContext(Runnable action) {
-        long previous = glfwGetCurrentContext();
-        GLCapabilities previousCapabilities = capabilitiesOrNull();
-        try {
-            glfwMakeContextCurrent(window);
-            GL.setCapabilities(capabilities);
-            action.run();
-        } finally {
-            glfwMakeContextCurrent(previous);
-            GL.setCapabilities(previousCapabilities);
-        }
+    private void hide() {
+        window.hide();
+        shown = false;
     }
 
     @Override
     public void close() {
-        if (window == 0) return;
-        try { if (backend != null) withContext(() -> backend.shutdown()); }
-        finally { glfwDestroyWindow(window); window = 0; backend = null; captureApi = null; hwnd = null; fontRevision = -1; }
+        if (window.handle() == 0) return;
+        try {
+            hide();
+            if (backend != null) withContext(backend::shutdown);
+        } catch (IllegalStateException unavailable) {
+            org.slf4j.LoggerFactory.getLogger("mica").warn("Overlay context unavailable during cleanup", unavailable);
+        } finally {
+            window.close();
+            shown = false;
+            backend = null;
+            captureApi = null;
+            hwnd = null;
+            fontRevision = -1;
+        }
     }
 }

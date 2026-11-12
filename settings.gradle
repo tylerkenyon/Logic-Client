@@ -11,4 +11,24 @@ pluginManagement {
 
 
  
+plugins {
+	id 'dev.kikugie.stonecutter' version '0.8.4'
+}
+
 rootProject.name = 'logic'
+
+includeBuild('mica') {
+	dependencySubstitution {
+		substitute module('dev.technix:mica-26.2') using project(':26.2')
+		substitute module('dev.technix:mica-26.3') using project(':26.3')
+	}
+}
+
+stonecutter {
+	kotlinController = false
+	centralScript = 'build.gradle'
+	create(getRootProject()) {
+		versions '26.2', '26.3'
+		vcsVersion = '26.2'
+	}
+}

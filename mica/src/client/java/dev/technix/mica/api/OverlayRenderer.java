@@ -26,6 +26,11 @@ public final class OverlayRenderer implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger("mica");
 
     private final MinecraftCompat compat;
+    private java.util.function.Consumer<String> diagnostics = message -> {};
+
+    public void setDiagnostics(java.util.function.Consumer<String> diagnostics) {
+        this.diagnostics = Objects.requireNonNull(diagnostics);
+    }
     private final FrostedGlassRenderer frostedGlass;
     private final ImGuiRenderer renderer;
     private final List<OverlayElement> elements = new ArrayList<>();
@@ -131,6 +136,10 @@ public final class OverlayRenderer implements AutoCloseable {
     }
 
 
+    public void renderFrame() {
+        if (prepareForFrame()) renderOverlay();
+    }
+
     public boolean prepareForFrame() {
         try {
             renderer.refreshVulkanContext();
@@ -138,9 +147,7 @@ public final class OverlayRenderer implements AutoCloseable {
             renderer.recordPendingTransfers();
             return true;
         } catch (Throwable t) {
-            LOGGER.error("ImGui prepareForFrame failed; disabling overlay", t);
-            renderer.reportCaptureFailure();
-            close();
+            handleFrameFailure("frame setup", t);
             return false;
         }
     }
@@ -172,9 +179,11 @@ public final class OverlayRenderer implements AutoCloseable {
                 } catch (Throwable t) {
                     failed.add(element);
                     LOGGER.error("Disabling overlay element {} after a failure", element.name(), t);
+                    diagnostics.accept("overlay element " + element.name() + " failed: " + t);
                 }
             }
             renderer.endElementsFrame();
+            renderer.endFrame();
 
             if (!renderer.isFontTextureReady()) {
                 return;
@@ -186,10 +195,20 @@ public final class OverlayRenderer implements AutoCloseable {
             }
             renderer.submit(context, target.get(), blurred);
         } catch (Throwable t) {
-            LOGGER.error("ImGui renderOverlay failed; disabling overlay", t);
-            renderer.reportCaptureFailure();
-            close();
+            handleFrameFailure("draw", t);
         }
+    }
+
+    private void handleFrameFailure(String stage, Throwable failure) {
+        if (renderer.recoverProtectedContext(failure)) {
+            LOGGER.warn("Mica {} failed. Rebuilding the protected overlay next frame.", stage, failure);
+            diagnostics.accept("overlay " + stage + " failed; retrying protected context: " + failure);
+            return;
+        }
+        LOGGER.error("Mica {} failed. Disabling the overlay.", stage, failure);
+        diagnostics.accept("overlay " + stage + " failed: " + failure);
+        renderer.reportCaptureFailure();
+        close();
     }
 
     @NotNull

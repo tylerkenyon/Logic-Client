@@ -24,6 +24,45 @@ import dev.technix.logic.client.setting.Setting;
 import org.joml.Matrix4f;
 
 public final class LogicChecks {
+    private static void checkHitSelect() {
+        var module = new dev.technix.logic.client.module.impl.HitSelect();
+        require(module.category() == dev.technix.logic.client.module.Category.COMBAT
+            && !module.enabledByDefault() && module.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_UNKNOWN,
+            "Hit Select defaults to disabled and unbound in Combat");
+        var settings = module.settings().stream().collect(java.util.stream.Collectors.toMap(Setting::name, setting -> setting));
+        var preference = (ModeSetting) settings.get("Preference");
+        require(preference.options().equals(java.util.List.of("BURST", "CRIT", "COMBO", "TIMER"))
+            && preference.get().equals("BURST"), "Port Vanish's four preferences and default");
+        require(settings.get("Burst HurtTime").visible() && !settings.get("Timer Delay").visible(), "Show Burst controls by default");
+        preference.set("CRIT");
+        require(settings.get("Crit Require Falling").visible() && !settings.get("Burst HurtTime").visible(), "Show Crit controls in Crit");
+        preference.set("COMBO");
+        require(settings.get("Combo Require Damage").visible() && !settings.get("Crit Require Falling").visible(), "Show Combo controls in Combo");
+        preference.set("TIMER");
+        var timerDelay = (RangeSetting) settings.get("Timer Delay");
+        require(timerDelay.visible() && timerDelay.low() == 350 && timerDelay.high() == 450, "Use Vanish's Timer interval");
+        require(Boolean.TRUE.equals(settings.get("Gate Auto Combat").get())
+            && Boolean.TRUE.equals(settings.get("Cancel Manual").get()), "Gate both attack sources by default");
+        require(Math.abs((Double) settings.get("Cooldown Threshold").get() - 0.92) < 1e-9,
+            "Use Vanish's cooldown threshold");
+
+        var timing = new dev.technix.logic.client.combat.HitSelectTiming();
+        timing.observe(1000, 0, true);
+        require(timing.openingHit() && timing.timerReady(1000), "An opening attack has no previous Timer delay");
+        require(!timing.tradeReady(1099, 100, 0) && timing.tradeReady(1100, 100, 0), "First-hit wait expires at its threshold");
+        timing.observe(1050, 10, true);
+        timing.observe(1060, 9, true);
+        require(!timing.tradeReady(1099, 200, 50) && timing.tradeReady(1100, 200, 50),
+            "An incoming hit clears first-hit wait and starts trade delay without restarting as hurt time decays");
+        timing.dispatched(1100, 400);
+        require(!timing.openingHit() && !timing.timerReady(1499) && timing.timerReady(1500),
+            "Only a dispatch advances the opening state and Timer interval");
+        timing.observe(2001, 0, false);
+        require(timing.openingHit() && !timing.receivedHit(), "Looking away clears the fight state");
+        timing.reset();
+        require(timing.openingHit() && timing.timerReady(1000), "A new session clears the Timer interval");
+    }
+
     public static void main(String[] args) {
         require(dev.technix.logic.client.module.impl.ClickGui.shouldHideCursor(true, true, true, dev.technix.mica.api.CaptureStatus.ACTIVE), "Protect cursor opened from gameplay");
         require(!dev.technix.logic.client.module.impl.ClickGui.shouldHideCursor(true, false, true, dev.technix.mica.api.CaptureStatus.ACTIVE)
@@ -39,6 +78,7 @@ public final class LogicChecks {
         checkAntiAction();
         checkInventoryModules();
         checkShieldBreaker();
+        checkHitSelect();
         require(dev.technix.logic.client.module.impl.InterfaceModule.pingLabel(false, 73).equals("73 ms"), "Display player-list latency without custom pong hooks");
         require(dev.technix.logic.client.module.impl.InterfaceModule.pingLabel(false, 0).equals("0 ms"), "Accept zero latency");
         require(dev.technix.logic.client.module.impl.InterfaceModule.pingLabel(true, -1).equals("0 ms"), "Singleplayer has zero network latency");
@@ -115,6 +155,9 @@ public final class LogicChecks {
         AABB slab = new AABB(0, 0, 0, 1, 0.5, 1);
         AABB slabFeet = new AABB(0.65, 0.42, 0.2, 1.15, 0.499, 0.8);
         require(EdgePrediction.reachesEdge(0.15, 100, d -> slabFeet.move(d, 0, 0).intersects(slab)), "Predict support loss on partial-height slab geometry");
+        require(!EdgePrediction.reachesEdge(slabFeet, -0.15, 0, 100, slab::intersects)
+            && EdgePrediction.reachesEdge(slabFeet, 0.15, 0, 100, slab::intersects),
+            "Detect support loss from momentum even while the movement input points back onto the block");
         var jumpReset = new dev.technix.logic.client.combat.JumpResetTiming();
         require(!jumpReset.update(0, true, 100, 100, 0, 0), "Do not jump without an incoming hit");
         require(jumpReset.update(10, true, 100, 100, 0.99, 0.99), "Full chance and accuracy jump immediately on a new hit");
@@ -344,7 +387,11 @@ public final class LogicChecks {
 
     private static void checkInventoryModules() {
         net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS
+            //? if <26.3 {
             .build(net.minecraft.data.registries.VanillaRegistries.createLookup())
+            //?} else {
+            /*.build(net.minecraft.data.registries.VanillaRegistries.createWorldLookup())
+            *///?}
             .forEach(net.minecraft.core.component.DataComponentInitializers.PendingComponents::apply);
         var head = net.minecraft.world.entity.EquipmentSlot.HEAD;
         var diamond = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DIAMOND_HELMET);
@@ -483,10 +530,10 @@ public final class LogicChecks {
     private static void checkLagRange() {
         var movement = new net.minecraft.network.protocol.game.ServerboundMovePlayerPacket.Pos(1, 2, 3, true, false);
         var slot = new net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket(2);
-        var swing = new net.minecraft.network.protocol.game.ServerboundSwingPacket(net.minecraft.world.InteractionHand.MAIN_HAND);
+        var use = new net.minecraft.network.protocol.game.ServerboundUseItemPacket(net.minecraft.world.InteractionHand.MAIN_HAND, 0, 0, 0);
         require(dev.technix.logic.client.module.impl.Blink.buffersGameplayPacket(movement)
             && dev.technix.logic.client.module.impl.Blink.buffersGameplayPacket(slot)
-            && dev.technix.logic.client.module.impl.Blink.buffersGameplayPacket(swing),
+            && dev.technix.logic.client.module.impl.Blink.buffersGameplayPacket(use),
             "Blink and Lag Range share ordering for movement, hotbar changes and combat actions");
         var debugPing = new net.minecraft.network.protocol.ping.ServerboundPingRequestPacket(1);
         var tickEnd = net.minecraft.network.protocol.game.ServerboundClientTickEndPacket.INSTANCE;
@@ -506,7 +553,7 @@ public final class LogicChecks {
         io.netty.channel.ChannelFutureListener listener = future -> { };
         var first = new Outgoing(movement, listener, false);
         var second = new Outgoing(slot, null, true);
-        var third = new Outgoing(swing, listener, false);
+        var third = new Outgoing(use, listener, false);
         require(queue.offer(first, 0) && queue.offer(second, 10) && queue.offer(third, 20), "Queue a complete ordered action sequence");
         require(!queue.offer(first, 30), "Bound outgoing queue growth");
         require(queue.release(150, 150).equals(java.util.List.of(first)), "Only replay packets whose own hold budget expired");
@@ -607,7 +654,7 @@ public final class LogicChecks {
         gui.editText(field);
         gui.handleKey(org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT, org.lwjgl.glfw.GLFW.GLFW_PRESS);
         gui.handleCharacter(0x1F600);
-        gui.handleKey(org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE, org.lwjgl.glfw.GLFW.GLFW_REPEAT);
+        gui.handleKey(org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE, com.mojang.blaze3d.platform.InputConstants.REPEAT);
         require(field.get().equals("AB") && gui.textCursor() == 1, "Insert and delete whole Unicode codepoints at the cursor");
         gui.handleCharacter('C');
         gui.handleKey(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, org.lwjgl.glfw.GLFW.GLFW_PRESS);

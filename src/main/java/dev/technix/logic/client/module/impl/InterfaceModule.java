@@ -20,6 +20,8 @@ public final class InterfaceModule extends Module {
     public final BooleanSetting screenshareProtection = registerSetting(new BooleanSetting("Screenshare protection",
         "Exclude all overlays from supported screen capture. Turn off to render them in the game.",
         System.getProperty("os.name", "").startsWith("Windows")));
+    public final BooleanSetting showNotifications = registerSetting(new BooleanSetting("Show notifications",
+        "Display pop-up notifications in the bottom-right corner.", true));
     public final BooleanSetting fps = registerSetting(new BooleanSetting("FPS", "", true));
     public final BooleanSetting ping = registerSetting(new BooleanSetting("Ping", "", true));
     public final BooleanSetting username = registerSetting(new BooleanSetting("Username", "", true));

@@ -12,6 +12,13 @@ import java.util.Optional;
 
 
 public interface MinecraftCompat {
+    static MinecraftCompat current() {
+        //? if <26.3 {
+        return new dev.technix.mica.api.compat.v26_2.MinecraftCompatImpl_26_2();
+        //?} else {
+        /*return new dev.technix.mica.api.compat.v26_3.MinecraftCompatImpl_26_3();
+        *///?}
+    }
 
 
     @NotNull

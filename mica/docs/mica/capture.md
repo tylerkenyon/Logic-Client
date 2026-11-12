@@ -6,7 +6,7 @@ It is hidden when the game is minimized or unfocused.
 
 ```java
 OverlayRenderer renderer = OverlayRenderer.builder()
-    .withMinecraftCompat(new MinecraftCompatImpl_26_2())
+    .withMinecraftCompat(MinecraftCompat.current())
     .withStreamproof(true)
     .build();
 
@@ -32,8 +32,10 @@ The native exclusion flag is checked before every protected frame. If it is lost
 the window is hidden and rendering fails closed. Unsupported Windows builds or
 disabled desktop composition also prevent the protected overlay from starting.
 
-Use Windows 10 version 2004 or later, desktop composition, and windowed or borderless
-Minecraft. Exclusive fullscreen hides the overlay. Other platforms are unsupported.
+Capture exclusion requires Windows 10 version 2004 or later and desktop composition.
+On Minecraft 26.3, protection switches exclusive fullscreen to borderless fullscreen
+and restores the selected fullscreen mode when protection ends. On 26.2, use windowed
+mode or borderless fullscreen.
 The protected window uses OpenGL 3.3 while Minecraft can continue using Vulkan.
 Capture exclusion is requested with `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`.
 Game capture normally captures the game without the separate overlay. Display/window

@@ -1,5 +1,6 @@
 package dev.technix.logic.client.module.impl;
 
+import dev.technix.mica.internal.GameInput;
 import dev.technix.logic.client.module.Category;
 import dev.technix.logic.client.module.Module;
 import dev.technix.logic.client.setting.Setting;
@@ -32,10 +33,25 @@ public final class ClickGui extends Module {
         return open;
     }
 
+    @dev.technix.logic.event.Subscribe
+    private void onFrame(dev.technix.logic.event.impl.FrameUpdateEvent event) {
+        var mc = mc();
+        if (!open || editingText != null || bindingTarget != null || mc.player == null
+                || !mc.isWindowActive() || mc.gui.screen() != null) return;
+        long window = mc.getWindow().handle();
+        int horizontal = (GameInput.keyDown(window, GLFW.GLFW_KEY_RIGHT) ? 1 : 0)
+            - (GameInput.keyDown(window, GLFW.GLFW_KEY_LEFT) ? 1 : 0);
+        int vertical = (GameInput.keyDown(window, GLFW.GLFW_KEY_DOWN) ? 1 : 0)
+            - (GameInput.keyDown(window, GLFW.GLFW_KEY_UP) ? 1 : 0);
+        // Entity.turn uses 0.15 degrees per unit. Clamp long frames to avoid jumps.
+        double amount = 90.0 * Math.clamp(event.deltaSeconds(), 0.0, 0.05) / 0.15;
+        if (horizontal != 0 || vertical != 0) mc.player.turn(horizontal * amount, vertical * amount);
+    }
+
     public boolean isBinding(Object target) { return bindingTarget == target; }
     public void startBinding(Object target) {
         if (!(target instanceof Module) && !(target instanceof KeybindSetting)) return;
-        editingText = null;
+        editText(null);
         bindingTarget = target == bindingTarget ? null : target;
     }
 
@@ -48,6 +64,10 @@ public final class ClickGui extends Module {
     }
     public int textCursor() { return textCursor; }
     public void editText(StringSetting setting) {
+        //? if >=26.3 {
+        /*if (mc() != null && (editingText == null) != (setting == null))
+            mc().textInputManager().onTextInputFocusChange(this, setting != null);
+        *///?}
         editingText = setting;
         textCursor = setting == null ? 0 : setting.get().length();
         if (setting != null) bindingTarget = null;
@@ -68,7 +88,7 @@ public final class ClickGui extends Module {
     }
 
     public void handleKey(int key, int action) {
-        if (action != GLFW.GLFW_PRESS && action != GLFW.GLFW_REPEAT) return;
+        if (action != GLFW.GLFW_PRESS && action != com.mojang.blaze3d.platform.InputConstants.REPEAT) return;
         if (bindingTarget instanceof Setting<?> setting && !setting.visible()) bindingTarget = null;
         if (editingText != null && !editingText.visible()) editText(null);
         if (editingText != null && key != TOGGLE_KEY && key != key()) {
@@ -91,8 +111,8 @@ public final class ClickGui extends Module {
                 }
                 case GLFW.GLFW_KEY_V -> {
                     long window = mc().getWindow().handle();
-                    if (GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
-                            || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS)
+                    if (GameInput.keyDown(window, GLFW.GLFW_KEY_LEFT_CONTROL)
+                            || GameInput.keyDown(window, GLFW.GLFW_KEY_RIGHT_CONTROL))
                         insertText(mc().keyboardHandler.getClipboard());
                 }
                 default -> { }
@@ -121,10 +141,15 @@ public final class ClickGui extends Module {
     }
 
     public boolean updateProtectedCursor() {
+        if (open && !rendererAvailable()) {
+            setEnabled(false);
+            return false;
+        }
         Minecraft mc = mc();
         if (mc == null || mc.getWindow() == null) return false;
         long window = mc.getWindow().handle();
         var overlay = ActiveRenderers.get();
+        //? if <26.3 {
         boolean hide = shouldHideCursor(open, wasMouseGrabbed, mc.isWindowActive()
             && GLFW.glfwGetWindowMonitor(window) == 0
             && GLFW.glfwGetWindowAttrib(window, GLFW.GLFW_ICONIFIED) == GLFW.GLFW_FALSE,
@@ -138,11 +163,28 @@ public final class ClickGui extends Module {
                 GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, previousCursorMode);
             cursorHidden = false;
         }
+        //?} else {
+        /*long flags = org.lwjgl.sdl.SDLVideo.SDL_GetWindowFlags(window);
+        boolean hide = shouldHideCursor(open, wasMouseGrabbed, mc.isWindowActive()
+            && (flags & org.lwjgl.sdl.SDLVideo.SDL_WINDOW_MINIMIZED) == 0
+            && !mc.getWindow().isExclusiveFullscreen(),
+            overlay == null ? CaptureStatus.DISABLED : overlay.captureStatus());
+        if (hide && !cursorHidden) {
+            cursorHidden = org.lwjgl.sdl.SDLMouse.SDL_HideCursor();
+        } else if (!hide && cursorHidden) {
+            org.lwjgl.sdl.SDLMouse.SDL_ShowCursor();
+            cursorHidden = false;
+        }
+        *///?}
         return cursorHidden;
     }
 
     @Override
     protected void onEnable() {
+        if (!rendererAvailable()) {
+            setEnabled(false);
+            return;
+        }
         open = true;
         KeyMapping.releaseAll();
         Minecraft mc = mc();
@@ -150,6 +192,13 @@ public final class ClickGui extends Module {
             wasMouseGrabbed = mc.mouseHandler.isMouseGrabbed();
             mc.mouseHandler.releaseMouse();
         }
+    }
+
+    private static boolean rendererAvailable() {
+        var overlay = ActiveRenderers.get();
+        return overlay != null && overlay.internalRenderer().isEnabled()
+            && overlay.captureStatus() != CaptureStatus.FAILED
+            && overlay.captureStatus() != CaptureStatus.UNSUPPORTED;
     }
 
     @Override

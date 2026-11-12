@@ -1,7 +1,11 @@
 package dev.technix.mica.mixin.client;
 
 import dev.technix.mica.internal.ActiveRenderers;
+//? if <26.3 {
 import net.minecraft.client.gui.render.GuiRenderer;
+//?} else {
+/*import net.minecraft.client.renderer.GameRenderer;
+*///?}
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -10,18 +14,21 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 
+//? if <26.3 {
 @Mixin(GuiRenderer.class)
+//?} else {
+/*@Mixin(GameRenderer.class)
+*///?}
 public abstract class GuiRendererMixin {
 
     private static final Logger IMGUI_LOGGER = LoggerFactory.getLogger("mica");
 
-    private static final boolean IMGUI_SKIP_BLUR =
-            Boolean.getBoolean("imgui.debug.skipBlur");
     private static final boolean IMGUI_SKIP_DRAW =
             Boolean.getBoolean("imgui.debug.skipDraw");
 
     private static boolean imgui$failed;
 
+    //? if <26.3 {
     @Inject(method = "render()V", at = @At("HEAD"))
     private void imgui$prepareFrame(CallbackInfo callbackInfo) {
         if (imgui$failed || IMGUI_SKIP_DRAW) {
@@ -34,13 +41,19 @@ public abstract class GuiRendererMixin {
         }
     }
 
+    //?}
+
     @Inject(method = "render()V", at = @At("TAIL"))
     private void imgui$recordOverlay(CallbackInfo callbackInfo) {
         if (imgui$failed || IMGUI_SKIP_DRAW) {
             return;
         }
         try {
+            //? if <26.3 {
             ActiveRenderers.renderOverlay();
+            //?} else {
+            /*ActiveRenderers.renderFrame();
+            *///?}
         } catch (Throwable throwable) {
             imgui$reportFailure("recording the ImGui overlay", throwable);
         }

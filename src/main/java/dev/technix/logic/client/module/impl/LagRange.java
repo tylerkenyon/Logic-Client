@@ -122,7 +122,11 @@ public final class LagRange extends Module {
                 && command.getAction() == ServerboundPlayerCommandPacket.Action.STOP_SPRINTING) releaseForAction();
         if (packet instanceof ServerboundAttackPacket && target != null && target.hurtTime < 5) releaseForAction();
         if (packet instanceof ServerboundUseItemPacket use && potionRelease.get()
+                //? if <26.3 {
                 && player.getItemInHand(use.getHand()).is(Items.SPLASH_POTION)) {
+                //?} else {
+                /*&& player.getItemInHand(use.hand()).is(Items.SPLASH_POTION)) {
+                *///?}
             potionPause = 15;
             deactivate();
         }
@@ -195,7 +199,11 @@ public final class LagRange extends Module {
             for (var child : bundle.subPackets()) observeIncoming(child);
         } else if (packet instanceof ClientboundPlayerPositionPacket || packet instanceof ClientboundRespawnPacket
                 || packet instanceof ClientboundLoginPacket || packet instanceof ClientboundDisconnectPacket || packet.isTerminal()) clear();
+        //? if <26.3 {
         else if (target != null && packet instanceof ClientboundRemoveEntitiesPacket remove && remove.getEntityIds().contains(target.getId())) deactivate();
+        //?} else {
+        /*else if (target != null && packet instanceof ClientboundRemoveEntitiesPacket remove && remove.entityIds().contains(target.getId())) deactivate();
+        *///?}
     }
 
     private void pump() {

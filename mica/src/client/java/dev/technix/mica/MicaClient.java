@@ -3,7 +3,7 @@ package dev.technix.mica;
 import dev.technix.mica.api.FontRegistry;
 import dev.technix.mica.api.FrostedGlassStyle;
 import dev.technix.mica.api.OverlayRenderer;
-import dev.technix.mica.api.compat.v26_2.MinecraftCompatImpl_26_2;
+import dev.technix.mica.api.MinecraftCompat;
 import dev.technix.mica.internal.ActiveRenderers;
 import imgui.ImColor;
 import net.fabricmc.api.ClientModInitializer;
@@ -31,7 +31,7 @@ public class MicaClient implements ClientModInitializer {
                 Identifier.fromNamespaceAndPath("mica", "font"));
 
         OverlayRenderer renderer = OverlayRenderer.builder()
-                .withMinecraftCompat(new MinecraftCompatImpl_26_2())
+                .withMinecraftCompat(MinecraftCompat.current())
                 .withFrostedGlass(true)
                 .withFrostedGlassStyle(SLEEK)
                 .withFontRegistry(exampleFonts)
@@ -42,7 +42,7 @@ public class MicaClient implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
             exampleFonts.add("body-lg", "sf-pro-display-medium.otf", 18.0f);
             exampleFonts.commitPendingFaces();
-            LOGGER.info("mica platform initialised (Minecraft 26.2 adapter wired in).");
+            LOGGER.info("Mica platform initialized.");
         });
 
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
