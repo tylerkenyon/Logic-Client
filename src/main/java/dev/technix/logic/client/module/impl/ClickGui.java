@@ -33,6 +33,21 @@ public final class ClickGui extends Module {
         return open;
     }
 
+    @dev.technix.logic.event.Subscribe
+    private void onFrame(dev.technix.logic.event.impl.FrameUpdateEvent event) {
+        var mc = mc();
+        if (!open || editingText != null || bindingTarget != null || mc.player == null
+                || !mc.isWindowActive() || mc.gui.screen() != null) return;
+        long window = mc.getWindow().handle();
+        int horizontal = (GameInput.keyDown(window, GLFW.GLFW_KEY_RIGHT) ? 1 : 0)
+            - (GameInput.keyDown(window, GLFW.GLFW_KEY_LEFT) ? 1 : 0);
+        int vertical = (GameInput.keyDown(window, GLFW.GLFW_KEY_DOWN) ? 1 : 0)
+            - (GameInput.keyDown(window, GLFW.GLFW_KEY_UP) ? 1 : 0);
+        // Entity.turn uses 0.15 degrees per unit. Clamp long frames to avoid jumps.
+        double amount = 90.0 * Math.clamp(event.deltaSeconds(), 0.0, 0.05) / 0.15;
+        if (horizontal != 0 || vertical != 0) mc.player.turn(horizontal * amount, vertical * amount);
+    }
+
     public boolean isBinding(Object target) { return bindingTarget == target; }
     public void startBinding(Object target) {
         if (!(target instanceof Module) && !(target instanceof KeybindSetting)) return;
@@ -126,6 +141,10 @@ public final class ClickGui extends Module {
     }
 
     public boolean updateProtectedCursor() {
+        if (open && !rendererAvailable()) {
+            setEnabled(false);
+            return false;
+        }
         Minecraft mc = mc();
         if (mc == null || mc.getWindow() == null) return false;
         long window = mc.getWindow().handle();
@@ -162,6 +181,10 @@ public final class ClickGui extends Module {
 
     @Override
     protected void onEnable() {
+        if (!rendererAvailable()) {
+            setEnabled(false);
+            return;
+        }
         open = true;
         KeyMapping.releaseAll();
         Minecraft mc = mc();
@@ -169,6 +192,13 @@ public final class ClickGui extends Module {
             wasMouseGrabbed = mc.mouseHandler.isMouseGrabbed();
             mc.mouseHandler.releaseMouse();
         }
+    }
+
+    private static boolean rendererAvailable() {
+        var overlay = ActiveRenderers.get();
+        return overlay != null && overlay.internalRenderer().isEnabled()
+            && overlay.captureStatus() != CaptureStatus.FAILED
+            && overlay.captureStatus() != CaptureStatus.UNSUPPORTED;
     }
 
     @Override

@@ -31,6 +31,7 @@ public final class ProtectedOverlay implements AutoCloseable {
         boolean GetWindowDisplayAffinity(HWND window, IntByReference affinity);
         int GetWindowLong(HWND window, int index);
         int SetWindowLong(HWND window, int index, int value);
+        boolean SetLayeredWindowAttributes(HWND window, int colorKey, byte alpha, int flags);
     }
 
     public interface VersionApi extends StdCallLibrary {
@@ -87,6 +88,17 @@ public final class ProtectedOverlay implements AutoCloseable {
         //?} else {
         /*long previous = SDL_GL_GetCurrentWindow();
         long previousContext = SDL_GL_GetCurrentContext();
+        int[] attributes = { SDL_GL_CONTEXT_MAJOR_VERSION, SDL_GL_CONTEXT_MINOR_VERSION,
+            SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_FLAGS, SDL_GL_SHARE_WITH_CURRENT_CONTEXT };
+        int[] oldAttributes = new int[attributes.length];
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            var value = stack.mallocInt(1);
+            for (int i = 0; i < attributes.length; i++) {
+                if (!SDL_GL_GetAttribute(attributes[i], value))
+                    throw new IllegalStateException("Cannot preserve host OpenGL attributes");
+                oldAttributes[i] = value.get(0);
+            }
+        }
         *///?}
         GLCapabilities previousCapabilities = capabilitiesOrNull();
         try {
@@ -112,6 +124,8 @@ public final class ProtectedOverlay implements AutoCloseable {
             /*SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+            SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
             window = SDL_CreateWindow("Mica overlay", 64, 64, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN
                 | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_TRANSPARENT);
             if (window == 0) throw new IllegalStateException("Cannot create the protected overlay window");
@@ -131,6 +145,13 @@ public final class ProtectedOverlay implements AutoCloseable {
             if (previousStyle == 0 && Native.getLastError() != 0) {
                 throw new IllegalStateException("Cannot configure the overlay window: " + Native.getLastError());
             }
+            //? if >=26.3 {
+            /*// Windows mouse passthrough requires both TRANSPARENT and LAYERED.
+            api.SetWindowLong(hwnd, -20, api.GetWindowLong(hwnd, -20) | 0x00080000);
+            if (!api.SetLayeredWindowAttributes(hwnd, 0, (byte) 255, 2)) {
+                throw new IllegalStateException("Cannot configure overlay mouse passthrough: " + Native.getLastError());
+            }
+            *///?}
             if (!api.SetWindowDisplayAffinity(hwnd, 0x11)) {
                 throw new IllegalStateException("Windows rejected capture exclusion: " + Native.getLastError());
             }
@@ -150,7 +171,7 @@ public final class ProtectedOverlay implements AutoCloseable {
             glfwDefaultWindowHints();
             glfwMakeContextCurrent(previous);
             //?} else {
-            /*SDL_GL_ResetAttributes();
+            /*for (int i = 0; i < attributes.length; i++) SDL_GL_SetAttribute(attributes[i], oldAttributes[i]);
             SDL_GL_MakeCurrent(previous, previousContext);
             *///?}
             GL.setCapabilities(previousCapabilities);
@@ -171,13 +192,16 @@ public final class ProtectedOverlay implements AutoCloseable {
 
     public void render() {
         var mc = Minecraft.getInstance();
-        long host = mc.getWindow().handle();
+        render(mc.getWindow().handle(), mc.isWindowActive());
+    }
+
+    public void render(long host, boolean hostActive) {
          
         //? if <26.3 {
-        boolean visible = mc.isWindowActive() && glfwGetWindowAttrib(host, GLFW_ICONIFIED) == GLFW_FALSE
+        boolean visible = hostActive && glfwGetWindowAttrib(host, GLFW_ICONIFIED) == GLFW_FALSE
             && glfwGetWindowMonitor(host) == 0;
         //?} else {
-        /*boolean visible = mc.isWindowActive() && (SDL_GetWindowFlags(host) & SDL_WINDOW_MINIMIZED) == 0
+        /*boolean visible = hostActive && (SDL_GetWindowFlags(host) & SDL_WINDOW_MINIMIZED) == 0
             && SDL_GetWindowFullscreenMode(host) == null;
         *///?}
         if (!visible) {
@@ -203,8 +227,7 @@ public final class ProtectedOverlay implements AutoCloseable {
                 lastY = y.get(0);
                 lastWidth = width;
                 lastHeight = height;
-                if (!com.sun.jna.platform.win32.User32.INSTANCE.SetWindowPos(hwnd, null,
-                    lastX, lastY, width, height, 0x0014)) {
+                if (!SDL_SetWindowPosition(window, lastX, lastY) || !SDL_SetWindowSize(window, width, height)) {
                     throw new IllegalStateException("Cannot position the protected overlay");
                 }
             }
@@ -219,7 +242,8 @@ public final class ProtectedOverlay implements AutoCloseable {
                 throw new IllegalStateException("Windows rejected overlay capture exclusion: " + Native.getLastError());
             }
             verifyCaptureProtection();
-            com.sun.jna.platform.win32.User32.INSTANCE.ShowWindow(hwnd, 4); // SW_SHOWNOACTIVATE
+            drawFrame();
+            if (!SDL_ShowWindow(window)) throw new IllegalStateException("Cannot show the protected overlay");
         }
         drawFrame();
         *///?}
@@ -265,7 +289,8 @@ public final class ProtectedOverlay implements AutoCloseable {
             //? if <26.3 {
             glfwMakeContextCurrent(window);
             //?} else {
-            /*if (!SDL_GL_MakeCurrent(window, glContext)) throw new IllegalStateException("Cannot activate protected OpenGL context");
+            /*if (!SDL_GL_MakeCurrent(window, glContext)) throw new IllegalStateException("Cannot activate protected OpenGL context: "
+                + org.lwjgl.sdl.SDLError.SDL_GetError());
             *///?}
             GL.setCapabilities(capabilities);
             action.run();
@@ -283,14 +308,20 @@ public final class ProtectedOverlay implements AutoCloseable {
         //? if <26.3 {
         glfwHideWindow(window);
         //?} else {
-        /*com.sun.jna.platform.win32.User32.INSTANCE.ShowWindow(hwnd, 0);
+        /*SDL_HideWindow(window);
         *///?}
     }
 
     @Override
     public void close() {
         if (window == 0) return;
+        hide();
         try { if (backend != null) withContext(() -> backend.shutdown()); }
+        catch (IllegalStateException unavailable) {
+            // Destroying the owning context also frees its GL objects. Continue cleanup
+            // when a lost context cannot be made current for explicit backend cleanup.
+            org.slf4j.LoggerFactory.getLogger("mica").warn("Overlay context unavailable during cleanup", unavailable);
+        }
         finally {
             //? if <26.3 {
             glfwDestroyWindow(window);

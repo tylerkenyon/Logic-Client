@@ -95,6 +95,7 @@ public final class RuntimeHost {
     public static boolean mouse(Object button, int action) { return Boolean.TRUE.equals(invoke("mouse", button, action)); }
     public static boolean scroll(double x, double y) { return Boolean.TRUE.equals(invoke("scroll", x, y)); }
     public static void mouseMove(double x, double y) { invoke("mouseMove", x, y); }
+    public static boolean blockMouseLook() { return Boolean.TRUE.equals(invoke("blockMouseLook")); }
     public static boolean textInput(Object text) { return Boolean.TRUE.equals(invoke("textInput", text)); }
     public static boolean character(Object event) { return Boolean.TRUE.equals(invoke("character", event)); }
     public static boolean foreignWindowEvent(Object window, Object event) {

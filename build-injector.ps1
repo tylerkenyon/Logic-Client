@@ -1,4 +1,4 @@
-param([switch]$Offline, [switch]$SmokeTest, [string]$OutputDirectory = 'dist')
+param([switch]$Offline, [switch]$SmokeTest, [string]$OutputDirectory = 'dist', [string]$NativeTargetDirectory = 'injector/target')
 $ErrorActionPreference = 'Stop'
 $repoRoot = $PSScriptRoot
 Push-Location $repoRoot
@@ -55,9 +55,9 @@ try {
     Copy-Item -LiteralPath 'build/injection/26.2/logic-payload.jar' -Destination 'build/injection/logic-payload.jar'
     $env:LOGIC_PAYLOAD = (Resolve-Path 'build/injection/logic-payload.jar').Path
     $env:LOGIC_PAYLOAD_26_3 = (Resolve-Path 'build/injection/26.3/logic-payload.jar').Path
-    & cargo test --manifest-path injector/Cargo.toml
+    & cargo test --manifest-path injector/Cargo.toml --target-dir $NativeTargetDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Rust tests failed' }
-    & cargo build --manifest-path injector/Cargo.toml --release
+    & cargo build --manifest-path injector/Cargo.toml --release --target-dir $NativeTargetDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Rust build failed' }
     if ($SmokeTest) {
         $env:LOGIC_PAYLOAD_26_3 = $null
@@ -65,7 +65,7 @@ try {
         if (!$?) { throw 'Native JVM smoke test failed' }
     }
     New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
-    Copy-Item -LiteralPath 'injector/target/release/LogicLauncher.exe','injector/target/release/logic_native.dll' -Destination $OutputDirectory
+    Copy-Item -LiteralPath (Join-Path $NativeTargetDirectory 'release/LogicLauncher.exe'),(Join-Path $NativeTargetDirectory 'release/logic_native.dll') -Destination $OutputDirectory
     Copy-Item -LiteralPath $mods -Destination $OutputDirectory
     Copy-Item -LiteralPath 'injector/README.md','injector/UPSTREAM.md' -Destination $OutputDirectory
     foreach ($gameVersion in @('26.2', '26.3')) {

@@ -42,6 +42,7 @@ public final class InjectionHooks {
         return switch (hook) {
             case "keyboard" -> keyboard((int)args[0], (KeyEvent)args[1]);
             case "mouse" -> mouse((MouseButtonInfo)args[0], (int)args[1]);
+            case "blockMouseLook" -> active && gui().open();
             case "scroll" -> scroll((double)args[0], (double)args[1]);
             case "character" -> character((CharacterEvent)args[0]);
             case "textInput" -> textInput((String)args[0]);
@@ -159,6 +160,7 @@ ActiveRenderers.feedKey(key.key(), key.scancode(), action);
     public static void afterGuiRender() {
         if (!active || !ownsMica) return;
         InjectedMica.afterRender();
+        gui().updateProtectedCursor();
         var overlay = ActiveRenderers.get();
         if (overlay == null) return;
         var renderer = overlay.internalRenderer();

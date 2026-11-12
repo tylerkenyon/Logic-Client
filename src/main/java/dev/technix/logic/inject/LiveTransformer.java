@@ -77,6 +77,7 @@ public final class LiveTransformer implements Opcodes {
                 *///?}
             }
             case "net/minecraft/client/MouseHandler" -> {
+                guard(method(node, "turnPlayer", "(D)V"), "blockMouseLook", "()Z", insns -> { });
                 if (injectMica) {
                     InsnList head = new InsnList();
                     head.add(new VarInsnNode(DLOAD, 3)); head.add(new VarInsnNode(DLOAD, 5));
