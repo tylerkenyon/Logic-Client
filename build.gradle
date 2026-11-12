@@ -3,17 +3,24 @@ plugins {
 	id 'maven-publish'
 }
 
+def minecraftVersion = stonecutter.current.version
+def fabricApiVersion = ['26.2': '0.161.0+26.2', '26.3': '0.166.0+26.3'][minecraftVersion]
+base.archivesName = "logic-${minecraftVersion}"
+
 repositories {
 	mavenCentral()
-	flatDir { dirs 'libs' }
 }
 
 dependencies {
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	minecraft "com.mojang:minecraft:${minecraftVersion}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-	implementation 'dev.technix:mica:0.2'
-	include 'dev.technix:mica:0.2'
-	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	implementation "dev.technix:mica-${minecraftVersion}:0.2"
+	include "dev.technix:mica-${minecraftVersion}:0.2"
+	if (minecraftVersion == '26.3') {
+        compileOnly "org.lwjgl:lwjgl-glfw:3.4.3"
+        testCompileOnly "org.lwjgl:lwjgl-glfw:3.4.3"
+    }
+	implementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
 	 
 	implementation "io.github.spair:imgui-java-binding:${project.imgui_version}"
 }
@@ -30,9 +37,10 @@ loom {
 processResources {
 	def version = project.version
 	inputs.property "version", version
+	inputs.property "minecraftVersion", minecraftVersion
 
 	filesMatching("fabric.mod.json") {
-		expand "version": version
+		expand "version": version, "minecraftVersion": minecraftVersion
 	}
 	filesMatching("assets/logic/version.txt") {
 		expand "version": version
@@ -41,6 +49,7 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 25
+	it.options.compilerArgs += ['-Xmaxerrs', '300']
 }
 
 java {
@@ -84,7 +93,7 @@ tasks.register('verifyConfig', JavaExec) {
 
 tasks.register('verifyInjection', JavaExec) {
 	group = 'verification'
-	description = 'Verifies live injection transformations against Minecraft 26.2 bytecode.'
+	description = "Verifies live injection transformations against Minecraft ${minecraftVersion} bytecode."
 	dependsOn tasks.named('testClasses')
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass = 'dev.technix.logic.InjectionChecks'
@@ -96,10 +105,10 @@ tasks.named('test') {
 }
 
 jar {
-	def projectName = project.name
+	def projectName = rootProject.name
 	inputs.property "projectName", projectName
 
-	from("LICENSE") {
+	from(rootProject.file("LICENSE")) {
 		rename { "${it}_$projectName"}
 	}
 }

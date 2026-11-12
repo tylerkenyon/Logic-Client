@@ -9,14 +9,24 @@ import java.util.function.Consumer;
 
 
 public final class LiveTransformer implements Opcodes {
+    //? if <26.3 {
+    private static final String MOUSE_MOVE = "(JDD)V";
+    public static final String PROJECTION_BUFFER = "Lcom/mojang/blaze3d/buffers/GpuBufferSlice;";
+    //?} else {
+    /*private static final String MOUSE_MOVE = "(JDDDD)V";
+    public static final String PROJECTION_BUFFER = "Lcom/mojang/renderpearl/api/buffers/GpuBufferSlice;";
+    *///?}
     private static final String HOOKS = "dev/technix/logic/host/RuntimeHost";
     public static final String[] TARGETS = {
         "net.minecraft.client.KeyboardHandler", "net.minecraft.client.MouseHandler",
         "net.minecraft.client.renderer.GameRenderer", "net.minecraft.client.Minecraft",
+        "net.minecraft.client.player.LocalPlayer",
         "net.minecraft.client.multiplayer.MultiPlayerGameMode", "net.minecraft.network.PacketProcessor$ListenerAndPacket",
         "net.minecraft.client.gui.render.GuiRenderer", "net.minecraft.client.renderer.ProjectionMatrixBuffer",
         "net.minecraft.client.renderer.entity.player.AvatarRenderer", "net.minecraft.network.Connection",
         "net.minecraft.client.gui.Font"
+        //? if >=26.3
+        /*, "com.mojang.blaze3d.platform.Window"*/
     };
 
     private LiveTransformer() { }
@@ -34,6 +44,15 @@ public final class LiveTransformer implements Opcodes {
             }
         }
         switch (node.name) {
+            //? if >=26.3 {
+            /*case "com/mojang/blaze3d/platform/Window" -> {
+                if (injectMica) guard(method(node, "handleEvent", "(Lorg/lwjgl/sdl/SDL_Event;)V"),
+                    "foreignWindowEvent", "(Ljava/lang/Object;Ljava/lang/Object;)Z", insns -> {
+                        insns.add(new VarInsnNode(ALOAD, 0));
+                        insns.add(new VarInsnNode(ALOAD, 1));
+                    });
+            }
+            *///?}
             case "net/minecraft/client/gui/Font" -> {
                 for (MethodNode method : node.methods) {
                     if (!(method.name.equals("prepareText") || method.name.equals("prepare8xTextOutline")
@@ -54,13 +73,18 @@ public final class LiveTransformer implements Opcodes {
                 });
                 guard(method(node, "charTyped", "(JLnet/minecraft/client/input/CharacterEvent;)V"),
                     "character", "(Lnet/minecraft/client/input/CharacterEvent;)Z", insns -> insns.add(new VarInsnNode(ALOAD, 3)));
+                //? if >=26.3 {
+                /*guard(method(node, "textInput", "(JLjava/lang/String;)V"), "textInput",
+                    "(Ljava/lang/String;)Z", insns -> insns.add(new VarInsnNode(ALOAD, 3)));
+                *///?}
             }
             case "net/minecraft/client/MouseHandler" -> {
+                guard(method(node, "turnPlayer", "(D)V"), "blockMouseLook", "()Z", insns -> { });
                 if (injectMica) {
                     InsnList head = new InsnList();
                     head.add(new VarInsnNode(DLOAD, 3)); head.add(new VarInsnNode(DLOAD, 5));
                     head.add(call("mouseMove", "(DD)V"));
-                    method(node, "onMove", "(JDD)V").instructions.insert(head);
+                    method(node, "onMove", MOUSE_MOVE).instructions.insert(head);
                 }
                 guard(method(node, "onButton", "(JLnet/minecraft/client/input/MouseButtonInfo;I)V"), "mouse",
                     "(Lnet/minecraft/client/input/MouseButtonInfo;I)Z", insns -> {
@@ -75,6 +99,9 @@ public final class LiveTransformer implements Opcodes {
                 head.add(new VarInsnNode(ALOAD, 1));
                 head.add(call("frame", "(Lnet/minecraft/client/DeltaTracker;)V"));
                 method(node, "update", "(Lnet/minecraft/client/DeltaTracker;)V").instructions.insert(head);
+                //? if >=26.3 {
+                /*if (injectMica) hookOverlay(method(node, "render", "()V"), false);
+                *///?}
                  
             }
             case "net/minecraft/client/renderer/ProjectionMatrixBuffer" -> {
@@ -82,7 +109,7 @@ public final class LiveTransformer implements Opcodes {
                 capture.add(new VarInsnNode(ALOAD, 0));
                 capture.add(new VarInsnNode(ALOAD, 1));
                 capture.add(call("projection", "(Ljava/lang/Object;Lorg/joml/Matrix4f;)V"));
-                method(node, "getBuffer", "(Lorg/joml/Matrix4f;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;")
+                method(node, "getBuffer", "(Lorg/joml/Matrix4f;)" + PROJECTION_BUFFER)
                     .instructions.insert(capture);
             }
             case "net/minecraft/client/Minecraft" -> {
@@ -106,7 +133,33 @@ public final class LiveTransformer implements Opcodes {
                 attackGuard.add(new InsnNode(ICONST_0));
                 attackGuard.add(new InsnNode(IRETURN));
                 attackGuard.add(attackAllowed);
-                method(node, "startAttack", "()Z").instructions.insert(attackGuard);
+                MethodNode startAttack = method(node, "startAttack", "()Z");
+                startAttack.instructions.insert(attackGuard);
+                int dispatchSites = 0;
+                for (AbstractInsnNode insn : startAttack.instructions.toArray()) {
+                    if (insn instanceof MethodInsnNode attack && attack.owner.equals("net/minecraft/client/multiplayer/MultiPlayerGameMode")
+                            && (attack.name.equals("attack") || attack.name.equals("piercingAttack"))) {
+                        startAttack.instructions.insertBefore(attack, call("attackDispatched", "()V"));
+                        dispatchSites++;
+                    }
+                }
+                if (dispatchSites != 2) throw new IllegalStateException("Vanilla attack dispatch sites were not found");
+            }
+            case "net/minecraft/client/player/LocalPlayer" -> {
+                MethodNode aiStep = method(node, "aiStep", "()V");
+                MethodInsnNode sample = null;
+                for (AbstractInsnNode insn : aiStep.instructions) {
+                    if (insn instanceof MethodInsnNode input && input.owner.equals("net/minecraft/client/player/ClientInput")
+                            && input.name.equals("tick") && input.desc.equals("()V")) {
+                        if (sample != null) throw new IllegalStateException("Multiple local player input samples found");
+                        sample = input;
+                    }
+                }
+                if (sample == null) throw new IllegalStateException("Local player input sample was not found");
+                InsnList afterSample = new InsnList();
+                afterSample.add(new VarInsnNode(ALOAD, 0));
+                afterSample.add(call("afterPlayerInput", "(Ljava/lang/Object;)V"));
+                aiStep.instructions.insert(sample, afterSample);
             }
             case "net/minecraft/client/multiplayer/MultiPlayerGameMode" -> {
                 InsnList head = new InsnList();
@@ -151,15 +204,8 @@ public final class LiveTransformer implements Opcodes {
                     });
             }
             case "net/minecraft/client/gui/render/GuiRenderer" -> {
-                if (injectMica) {
-                    MethodNode render = method(node, "render", "()V");
-                    InsnList head = new InsnList();
-                    head.add(call("beforeGuiRender", "()V"));
-                    render.instructions.insert(head);
-                    for (AbstractInsnNode insn : render.instructions.toArray()) {
-                        if (insn.getOpcode() == RETURN) render.instructions.insertBefore(insn, call("afterGuiRender", "()V"));
-                    }
-                }
+                //? if <26.3
+                if (injectMica) hookOverlay(method(node, "render", "()V"), true);
             }
             default -> throw new IllegalArgumentException("Unsupported target " + node.name);
         }
@@ -168,6 +214,14 @@ public final class LiveTransformer implements Opcodes {
         };
         node.accept(writer);
         return writer.toByteArray();
+    }
+
+    private static void hookOverlay(MethodNode render, boolean prepareAtStart) {
+        if (prepareAtStart) render.instructions.insert(call("beforeGuiRender", "()V"));
+        for (AbstractInsnNode instruction : render.instructions.toArray()) {
+            if (instruction.getOpcode() != RETURN) continue;
+            render.instructions.insertBefore(instruction, call("afterGuiRender", "()V"));
+        }
     }
 
     private static MethodNode method(ClassNode node, String name, String desc) {

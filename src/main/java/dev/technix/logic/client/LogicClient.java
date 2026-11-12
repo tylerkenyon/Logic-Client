@@ -2,11 +2,13 @@ package dev.technix.logic.client;
 
 import dev.technix.logic.Logic;
 import dev.technix.logic.client.gui.ClickGuiRenderer;
+import dev.technix.logic.client.gui.ToastOverlay;
 import dev.technix.logic.client.module.ModuleManager;
 import dev.technix.logic.client.module.impl.ClickGui;
 import dev.technix.logic.client.module.impl.Sprint;
 import dev.technix.logic.client.module.impl.AimAssist;
 import dev.technix.logic.client.module.impl.Triggerbot;
+import dev.technix.logic.client.module.impl.HitSelect;
 import dev.technix.logic.client.module.impl.ESP;
 import dev.technix.logic.client.module.impl.Indicators;
 import dev.technix.logic.client.module.impl.Trajectories;
@@ -35,6 +37,8 @@ import dev.technix.logic.client.module.impl.JumpReset;
 import dev.technix.logic.client.module.impl.SprintReset;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.network.Connection;
 import io.netty.channel.ChannelFutureListener;
 import net.minecraft.network.protocol.Packet;
@@ -47,9 +51,11 @@ import dev.technix.logic.client.gui.UiTheme;
 import dev.technix.logic.event.impl.ClientTickEvent;
 import dev.technix.mica.api.OverlayRenderer;
 import dev.technix.mica.internal.ActiveRenderers;
+import dev.technix.mica.internal.GameInput;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import org.lwjgl.glfw.GLFW;
 
 public final class LogicClient implements ClientModInitializer {
     private static boolean initialized;
@@ -61,6 +67,13 @@ public final class LogicClient implements ClientModInitializer {
     private boolean previousCaptureProtection;
 
     public static boolean running() { return instance != null && instance.running; }
+
+
+    public static void showToast(String message) {
+        LogicClient client = instance;
+        if (client != null && client.running) client.toasts.enqueue(message);
+    }
+
     public static void requestShutdown() {
         if (instance != null && instance.running) instance.shutdownRequested = true;
     }
@@ -72,25 +85,28 @@ public final class LogicClient implements ClientModInitializer {
     private final ClickGuiRenderer clickGuiRenderer = new ClickGuiRenderer(clickGui);
     private final ClickGuiConfig guiConfig = new ClickGuiConfig();
     private final InterfaceModule interfaceModule = new InterfaceModule();
+    private final ToastOverlay toasts = new ToastOverlay(interfaceModule);
     private final SnapTap snapTap = new SnapTap();
     private final Eagle eagle = new Eagle();
     private final ClientSpoofer clientSpoofer = new ClientSpoofer();
     private final NameHider nameHider = new NameHider();
     private final AntiBot antiBot = new AntiBot();
+    private final HitSelect hitSelect = new HitSelect();
+    private boolean triggerbotClick;
     private final AnchorMacro anchorMacro = new AnchorMacro();
     private final TimerModule timer = new TimerModule();
     private ConfigStore config;
 
     @Override
     public void onInitializeClient() {
-        initialize(false);
+        initialize(false, null);
     }
 
-    public void initializeInjected() {
-        initialize(true);
+    public void initializeInjected(java.nio.file.Path configFile) {
+        initialize(true, configFile);
     }
 
-    private void initialize(boolean injected) {
+    private void initialize(boolean injected, java.nio.file.Path configFile) {
         if (initialized) return;
         initialized = true;
         instance = this;
@@ -104,6 +120,7 @@ public final class LogicClient implements ClientModInitializer {
         MODULES.register(new AntiAction());
         MODULES.register(new AutoShieldBreaker());
         MODULES.register(new Triggerbot());
+        MODULES.register(hitSelect);
         MODULES.register(new SprintReset());
         MODULES.register(new JumpReset());
         MODULES.register(new ESP());
@@ -127,8 +144,13 @@ public final class LogicClient implements ClientModInitializer {
         MODULES.register(guiConfig);
         MODULES.register(new ArraylistModule());
         MODULES.register(new dev.technix.logic.client.module.impl.SelfDestruct());
-        config = new ConfigStore(MODULES, clickGuiRenderer, THEME);
+        config = configFile == null ? new ConfigStore(MODULES, clickGuiRenderer, THEME)
+            : new ConfigStore(configFile, MODULES, clickGuiRenderer, THEME);
+        if (injected) config.setDiagnostics(dev.technix.logic.inject.NativeBridge::log);
         config.load();
+        if (injected) dev.technix.logic.inject.NativeBridge.log("configuration: file=" + configFile
+            + ", exists=" + (configFile != null && java.nio.file.Files.exists(configFile))
+            + ", captureProtection=" + interfaceModule.screenshareProtection.get());
 
          
         if (injected) startClient();
@@ -143,8 +165,12 @@ public final class LogicClient implements ClientModInitializer {
     public static void startTick() {
         LogicClient client = instance;
         if (client == null || !client.running || client.shutdownRequested) return;
+        client.hitSelect.startTick();
         MODULES.get(JumpReset.class).startTick();
-        client.eagle.startTick();
+    }
+
+    public static void afterPlayerInput(LocalPlayer player) {
+        if (running() && Minecraft.getInstance().player == player) instance.eagle.applyInput(player);
     }
 
     public static void beforeKeybinds() {
@@ -155,14 +181,46 @@ public final class LogicClient implements ClientModInitializer {
 
     public static boolean attackClick(boolean manualClick) {
         if (!running()) return manualClick;
+        var client = instance;
+        client.triggerbotClick = false;
         var shieldBreaker = MODULES.get(AutoShieldBreaker.class);
         if (shieldBreaker.busy()) return shieldBreaker.attackClick();
+        var triggerbot = MODULES.get(Triggerbot.class);
         MODULES.get(AutoTool.class).beforeAttack(manualClick);
-        return MODULES.get(Triggerbot.class).attackClick(manualClick);
+        if (!client.hitSelect.enabled()) return triggerbot.attackClick(manualClick);
+
+        var mc = Minecraft.getInstance();
+        if (manualClick) {
+            triggerbot.markClickSeen();
+            if (!(mc.hitResult instanceof EntityHitResult hit)) return true;
+            // A denied click ends the vanilla loop. Discard any remaining presses for this entity.
+            while (mc.options.keyAttack.consumeClick()) {}
+            return !client.hitSelect.attackedThisTick() && client.hitSelect.allowManualAttack(hit.getEntity());
+        }
+        if (client.hitSelect.attackedThisTick() || !triggerbot.automaticAttackReady()
+                || !(mc.hitResult instanceof EntityHitResult hit)
+                || !client.hitSelect.allowAutomaticAttack(hit.getEntity())) return false;
+        triggerbot.markClickSeen();
+        client.triggerbotClick = true;
+        return true;
+    }
+
+    public static void attackDispatched() {
+        if (!running()) return;
+        var client = instance;
+        if (client.triggerbotClick) {
+            client.triggerbotClick = false;
+            MODULES.get(Triggerbot.class).recordAutomaticAttack();
+        }
+        if (client.hitSelect.enabled() && Minecraft.getInstance().hitResult instanceof EntityHitResult) {
+            client.hitSelect.attackDispatched();
+        }
     }
 
     public static void afterKeybinds() {
-        if (running()) MODULES.get(SprintReset.class).afterKeybinds();
+        if (!running()) return;
+        instance.triggerbotClick = false;
+        MODULES.get(SprintReset.class).afterKeybinds();
     }
 
     public static boolean hideVanillaNametag(Object entity) {
@@ -240,8 +298,16 @@ public final class LogicClient implements ClientModInitializer {
         if (interceptCommonPacket(packet, connection)) return true;
         if (instance.clientSpoofer.protectsTranslations() && packet instanceof ClientboundOpenSignEditorPacket open
                 && Minecraft.getInstance().level != null
+                //? if <26.3 {
                 && Minecraft.getInstance().level.getBlockEntity(open.getPos()) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+                //?} else {
+                /*&& Minecraft.getInstance().level.getBlockEntity(open.pos()) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+                *///?}
+            //? if <26.3 {
             instance.clientSpoofer.protectSign(sign, open.isFrontText());
+            //?} else {
+            /*instance.clientSpoofer.protectSign(sign, open.slot() == net.minecraft.world.level.block.entity.SignTextSlot.FRONT);
+            *///?}
         }
         MODULES.get(Blink.class).observeIncoming(packet);
         MODULES.get(LagRange.class).observeIncoming(packet);
@@ -277,7 +343,6 @@ public final class LogicClient implements ClientModInitializer {
         client.guiConfig.updateMovement(client.clickGui.open());
         client.snapTap.update();
         Logic.events().post(new ClientTickEvent());
-        client.eagle.update();
         client.applyCaptureSettings();
         client.clickGui.updateProtectedCursor();
         client.config.tick();
@@ -289,6 +354,10 @@ public final class LogicClient implements ClientModInitializer {
         client.previousPauseOnLostFocus = mc.options.pauseOnLostFocus;
         mc.options.pauseOnLostFocus = false;
         client.attachOverlay();
+        int bind = client.clickGui.key();
+        showToast("Vanish Loaded!");
+        showToast(bind == GLFW.GLFW_KEY_UNKNOWN ? "Bind a key to open ClickGUI"
+            : "Press " + GameInput.describe(bind, false).getDisplayName().getString() + " to open ClickGUI");
     }
     public static void stopClient() {
         LogicClient client = instance;
@@ -342,12 +411,14 @@ public final class LogicClient implements ClientModInitializer {
         previousCaptureProtection = overlay.isStreamproofRequested();
         overlay.setStreamproof(interfaceModule.screenshareProtection.get());
         overlay.registerElement(clickGuiRenderer);
+        overlay.registerElement(toasts);
         Logic.LOGGER.info("click GUI attached to the Mica renderer");
     }
 
     private void detachOverlay() {
         OverlayRenderer overlay = attachedOverlay;
         if (overlay != null) {
+            overlay.unregisterElement(toasts);
             overlay.unregisterElement(clickGuiRenderer);
         }
     }

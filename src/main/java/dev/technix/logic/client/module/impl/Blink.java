@@ -72,7 +72,9 @@ public final class Blink extends Module {
             || packet instanceof ServerboundPingRequestPacket
             || packet instanceof ServerboundPlayerCommandPacket || packet instanceof ServerboundClientTickEndPacket
             || packet instanceof ServerboundAttackPacket || packet instanceof ServerboundInteractPacket
-            || packet instanceof ServerboundSwingPacket || packet instanceof ServerboundUseItemPacket
+            //? if <26.3
+            || packet instanceof ServerboundSwingPacket
+            || packet instanceof ServerboundUseItemPacket
             || packet instanceof ServerboundUseItemOnPacket || packet instanceof ServerboundPlayerActionPacket
             || packet instanceof ServerboundSetCarriedItemPacket;
     }

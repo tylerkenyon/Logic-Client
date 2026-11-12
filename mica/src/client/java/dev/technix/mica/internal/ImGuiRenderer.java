@@ -12,7 +12,7 @@ import imgui.ImGui;
 import imgui.ImGuiIO;
 import imgui.gl3.ImGuiImplGl3;
 import net.minecraft.client.Minecraft;
-import static org.lwjgl.glfw.GLFW.*;
+
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VkCommandBuffer;
@@ -48,15 +48,29 @@ public final class ImGuiRenderer {
     private boolean protectedMode;
     private volatile CaptureStatus captureStatus = CaptureStatus.DISABLED;
     private ProtectedOverlay protectedOverlay;
+    private boolean retriedProtectedContext;
 
     public void setStreamproof(boolean enabled) {
         if (streamproof == enabled) return;
         streamproof = enabled;
+        retriedProtectedContext = false;
         captureStatus = enabled ? CaptureStatus.PENDING : CaptureStatus.DISABLED;
     }
 
     public boolean isStreamproofRequested() { return streamproof; }
     public CaptureStatus captureStatus() { return captureStatus; }
+
+    public boolean recoverProtectedContext(Throwable failure) {
+        if (!streamproof || retriedProtectedContext || !(failure instanceof ProtectedWindow.ContextException)) {
+            return false;
+        }
+        retriedProtectedContext = true;
+        FrostedGlassRenderer glass = frostedGlassRenderer;
+        shutdown();
+        frostedGlassRenderer = glass;
+        captureStatus = CaptureStatus.PENDING;
+        return true;
+    }
 
     public void reportCaptureFailure() {
         if (streamproof) captureStatus = CaptureStatus.FAILED;
@@ -114,7 +128,7 @@ public final class ImGuiRenderer {
         }
         if (streamproof && (captureStatus == CaptureStatus.FAILED || captureStatus == CaptureStatus.UNSUPPORTED)) return;
         vulkanContext = compat.currentVulkanContext().orElse(null);
-        openGl = vulkanContext == null && glfwGetCurrentContext() != 0;
+        openGl = vulkanContext == null && MinecraftAccess.hasOpenGlContext();
         if (vulkanContext == null && !openGl) return;
         ImGui.createContext();
         ImGuiIO io = ImGui.getIO();
@@ -136,6 +150,7 @@ public final class ImGuiRenderer {
                 protectedOverlay = null;
                 ImGuiFonts.reset();
                 ImGui.destroyContext();
+                if (failure instanceof ProtectedWindow.ContextException contextFailure) throw contextFailure;
                 captureStatus = failure instanceof UnsupportedOperationException
                     ? CaptureStatus.UNSUPPORTED : CaptureStatus.FAILED;
                 org.slf4j.LoggerFactory.getLogger("mica").error("Protected overlay unavailable; hiding Mica overlays until disabled", failure);
@@ -266,17 +281,15 @@ public final class ImGuiRenderer {
     
     public boolean beginFrame() {
         ensureInitialized();
-        if (!initialized) return false;
+        if (!initialized || (protectedOverlay != null && !protectedOverlay.prepareHost())) return false;
         refreshVulkanContext();
         if (vulkanContext == null && !openGl) return false;
         Integer contextWidth = openGl ? null : vulkanContext.framebufferWidth();
         Integer contextHeight = openGl ? null : vulkanContext.framebufferHeight();
-        if (openGl) {
-            try (MemoryStack stack = stackPush()) {
-                var w = stack.mallocInt(1); var h = stack.mallocInt(1);
-                glfwGetFramebufferSize(Minecraft.getInstance().getWindow().handle(), w, h);
-                contextWidth = w.get(0); contextHeight = h.get(0);
-            }
+        if (protectedMode || openGl) {
+            var window = Minecraft.getInstance().getWindow();
+            contextWidth = window.getWidth();
+            contextHeight = window.getHeight();
         }
         int width = contextWidth != null && contextWidth > 0 ? contextWidth : 1;
         int height = contextHeight != null && contextHeight > 0 ? contextHeight : 1;
@@ -428,20 +441,18 @@ public final class ImGuiRenderer {
     
     public void submit(RenderContext context, HostRenderTarget target, boolean blurred) {
         if (protectedOverlay != null) {
-            ImGui.render();
             protectedOverlay.render();
             return;
         }
         if (openGlBackend != null) {
-            ImGui.render();
-            var gameTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
-            if (!(gameTarget.getColorTextureView() instanceof com.mojang.blaze3d.opengl.GlTextureView color)) return;
+            var color = MinecraftAccess.openGlTarget();
+            if (color == null) return;
             int previous = org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER_BINDING);
             if (openGlFramebuffer == 0) openGlFramebuffer = org.lwjgl.opengl.GL30.glGenFramebuffers();
             try {
                 org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER, openGlFramebuffer);
                 org.lwjgl.opengl.GL30.glFramebufferTexture2D(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER,
-                    org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0, org.lwjgl.opengl.GL11.GL_TEXTURE_2D, color.glId(), color.fboMipLevel());
+                    org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0, org.lwjgl.opengl.GL11.GL_TEXTURE_2D, color.texture(), color.mipLevel());
                 if (org.lwjgl.opengl.GL30.glCheckFramebufferStatus(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER)
                         != org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_COMPLETE) throw new IllegalStateException("Minecraft OpenGL target is incomplete");
                 openGlBackend.renderDrawData(ImGui.getDrawData());
@@ -458,14 +469,13 @@ public final class ImGuiRenderer {
         
         
         
-        ImGui.render();
         vulkanBackend.renderInOwnPass(ImGui.getDrawData(), commandBuffer, target.colorImageView(),
                 target.width(), target.height());
     }
 
     
     public java.util.Optional<HostRenderTarget> currentHostRenderTarget(MinecraftCompat compat) {
-        if (openGl) return java.util.Optional.of(new HostRenderTarget(frameWidth, frameHeight, 0));
+        if (protectedMode || openGl) return java.util.Optional.of(new HostRenderTarget(frameWidth, frameHeight, 0));
         VulkanContext ctx = compat.currentVulkanContext().orElse(null);
         if (ctx == null || ctx.getCurrentSceneImageView() == 0L) {
             return java.util.Optional.empty();

@@ -18,7 +18,11 @@ public abstract class KeyboardHandlerMixin {
             at = @At("HEAD"), cancellable = true)
     private void imguiKeyPress(long windowPointer, int action, KeyEvent event,
                                CallbackInfo ci) {
+        //? if <26.3 {
         ActiveRenderers.feedKey(event.key(), event.scancode(), action);
+        //?} else {
+        /*ActiveRenderers.feedKey(dev.technix.mica.internal.GameInput.key(event.key()), event.key(), action);
+        *///?}
         if (ActiveRenderers.wantsKeyboard()) {
             ci.cancel();
         }
