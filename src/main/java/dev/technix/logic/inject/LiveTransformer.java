@@ -20,6 +20,7 @@ public final class LiveTransformer implements Opcodes {
     public static final String[] TARGETS = {
         "net.minecraft.client.KeyboardHandler", "net.minecraft.client.MouseHandler",
         "net.minecraft.client.renderer.GameRenderer", "net.minecraft.client.Minecraft",
+        "net.minecraft.client.player.LocalPlayer",
         "net.minecraft.client.multiplayer.MultiPlayerGameMode", "net.minecraft.network.PacketProcessor$ListenerAndPacket",
         "net.minecraft.client.gui.render.GuiRenderer", "net.minecraft.client.renderer.ProjectionMatrixBuffer",
         "net.minecraft.client.renderer.entity.player.AvatarRenderer", "net.minecraft.network.Connection",
@@ -143,6 +144,22 @@ public final class LiveTransformer implements Opcodes {
                     }
                 }
                 if (dispatchSites != 2) throw new IllegalStateException("Vanilla attack dispatch sites were not found");
+            }
+            case "net/minecraft/client/player/LocalPlayer" -> {
+                MethodNode aiStep = method(node, "aiStep", "()V");
+                MethodInsnNode sample = null;
+                for (AbstractInsnNode insn : aiStep.instructions) {
+                    if (insn instanceof MethodInsnNode input && input.owner.equals("net/minecraft/client/player/ClientInput")
+                            && input.name.equals("tick") && input.desc.equals("()V")) {
+                        if (sample != null) throw new IllegalStateException("Multiple local player input samples found");
+                        sample = input;
+                    }
+                }
+                if (sample == null) throw new IllegalStateException("Local player input sample was not found");
+                InsnList afterSample = new InsnList();
+                afterSample.add(new VarInsnNode(ALOAD, 0));
+                afterSample.add(call("afterPlayerInput", "(Ljava/lang/Object;)V"));
+                aiStep.instructions.insert(sample, afterSample);
             }
             case "net/minecraft/client/multiplayer/MultiPlayerGameMode" -> {
                 InsnList head = new InsnList();

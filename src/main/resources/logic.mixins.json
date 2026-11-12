@@ -12,6 +12,7 @@
 		"MouseHandlerMixin",
         "GameRendererMixin",
         "MinecraftUseMixin",
+        "LocalPlayerInputMixin",
         "AttackMixin",
         "IncomingPacketMixin",
         "AvatarNametagMixin",
