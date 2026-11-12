@@ -55,10 +55,8 @@ public final class ProtectedOverlayCheck {
                         if (dev.technix.mica.internal.MinecraftAccess.hasOpenGlContext()) throw new AssertionError("Rendering leaked a GL context");
                     }
                      
-                    try {
-                        var field = ProtectedOverlay.class.getDeclaredField("window");
-                        field.setAccessible(true);
-                        long handle = field.getLong(overlay);
+                    {
+                        long handle = overlay.windowHandle();
                         //? if <26.3 {
                         long hwnd = org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window(handle);
                         //?} else {
@@ -92,8 +90,6 @@ public final class ProtectedOverlayCheck {
                         if (!rejected || visible) {
                             throw new AssertionError("Overlay must hide and reject rendering when protection is lost");
                         }
-                    } catch (ReflectiveOperationException failure) {
-                        throw new AssertionError(failure);
                     }
                 } finally {
                     ImGui.destroyContext();

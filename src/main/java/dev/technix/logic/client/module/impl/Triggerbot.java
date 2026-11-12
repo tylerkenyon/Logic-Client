@@ -48,12 +48,20 @@ public final class Triggerbot extends Module {
             attackClickSeen = true;
             return true;
         }
-        if (!enabled() || attackClickSeen || observedTarget == null || target() != observedTarget
-                || System.nanoTime() < readyAt
-                || !CombatMath.cooldownReady(mc().player.getAttackStrengthScale(0), cooldown.get())) return false;
+        if (!automaticAttackReady()) return false;
+        recordAutomaticAttack();
+        return true;
+    }
+
+    public boolean automaticAttackReady() {
+        return enabled() && !attackClickSeen && observedTarget != null && target() == observedTarget
+            && System.nanoTime() >= readyAt
+            && CombatMath.cooldownReady(mc().player.getAttackStrengthScale(0), cooldown.get());
+    }
+
+    public void recordAutomaticAttack() {
         attackClickSeen = true;
         schedule();
-        return true;
     }
 
     private LivingEntity target() {

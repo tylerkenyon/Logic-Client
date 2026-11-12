@@ -1,6 +1,7 @@
 package dev.technix.logic;
 
 import dev.technix.logic.client.combat.CombatMath;
+import dev.technix.logic.client.combat.HitSelectTiming.AttackSource;
 import dev.technix.logic.client.combat.PacketDelayQueue;
 import dev.technix.logic.client.module.impl.UseRateGate;
 import dev.technix.logic.client.module.impl.AimAssist;
@@ -24,6 +25,43 @@ import dev.technix.logic.client.setting.Setting;
 import org.joml.Matrix4f;
 
 public final class LogicChecks {
+    private static void checkHitSelect() {
+        var module = new dev.technix.logic.client.module.impl.HitSelect();
+        require(module.category() == dev.technix.logic.client.module.Category.COMBAT
+            && !module.enabledByDefault() && module.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_UNKNOWN,
+            "Hit Select defaults to disabled and unbound in Combat");
+        var settings = module.settings().stream().collect(java.util.stream.Collectors.toMap(Setting::name, setting -> setting));
+        var charge = (NumberSetting) settings.get("Charge threshold");
+        require(Math.abs(charge.get() - 0.95) < 1e-9 && charge.min() == 0.10 && charge.max() == 1.00,
+            "Hit Select charge threshold default and range");
+        var delay = (NumberSetting) settings.get("Delay ticks");
+        require(delay.get() == 4 && delay.min() == 2 && delay.max() == 40, "Hit Select delay default and range");
+        delay.set(6.4);
+        require(delay.get() == 6, "Hit Select delay uses whole client ticks");
+        for (String name : java.util.List.of("Players", "Hostiles", "Weapon required", "Exclude friends")) {
+            require(Boolean.TRUE.equals(settings.get(name).get()), "Hit Select enables " + name + " by default");
+        }
+        for (String name : java.util.List.of("Passive", "Require critical", "Require sprint")) {
+            require(Boolean.FALSE.equals(settings.get(name).get()), "Hit Select disables " + name + " by default");
+        }
+
+        var timing = new dev.technix.logic.client.combat.HitSelectTiming();
+        require(timing.beginCheck(10, 4) && !timing.beginCheck(10, 4), "Only evaluate Hit Select once per tick");
+        require(!timing.selectClick(false, true, () -> true), "A released queued click cannot become a Triggerbot attack");
+        require(timing.dispatched(10) == null, "A cancelled click cannot start the delay");
+        require(timing.beginCheck(11, 4), "A check without a dispatch does not start the delay");
+        require(timing.selectClick(true, true, () -> true) && timing.dispatched(11) == AttackSource.HELD,
+            "A held click takes priority when Triggerbot is also ready");
+        require(!timing.beginCheck(12, 4) && !timing.beginCheck(14, 4), "Keep the delay between dispatched attacks");
+        require(timing.beginCheck(15, 4), "Resume exactly at the delay boundary");
+        require(!timing.selectClick(false, false, () -> false), "An idle player must wait for Triggerbot readiness");
+        require(timing.selectClick(false, false, () -> true) && timing.dispatched(15) == AttackSource.TRIGGERBOT
+            && timing.dispatched(15) == null, "Dispatch a ready Triggerbot attack once without physical input");
+        require(!timing.beginCheck(16, 4), "Triggerbot dispatches use the same Hit Select delay");
+        timing.resetDelay();
+        require(timing.beginCheck(17, 4), "A new session clears the delay");
+    }
+
     public static void main(String[] args) {
         require(dev.technix.logic.client.module.impl.ClickGui.shouldHideCursor(true, true, true, dev.technix.mica.api.CaptureStatus.ACTIVE), "Protect cursor opened from gameplay");
         require(!dev.technix.logic.client.module.impl.ClickGui.shouldHideCursor(true, false, true, dev.technix.mica.api.CaptureStatus.ACTIVE)
@@ -39,6 +77,7 @@ public final class LogicChecks {
         checkAntiAction();
         checkInventoryModules();
         checkShieldBreaker();
+        checkHitSelect();
         require(dev.technix.logic.client.module.impl.InterfaceModule.pingLabel(false, 73).equals("73 ms"), "Display player-list latency without custom pong hooks");
         require(dev.technix.logic.client.module.impl.InterfaceModule.pingLabel(false, 0).equals("0 ms"), "Accept zero latency");
         require(dev.technix.logic.client.module.impl.InterfaceModule.pingLabel(true, -1).equals("0 ms"), "Singleplayer has zero network latency");
@@ -115,6 +154,9 @@ public final class LogicChecks {
         AABB slab = new AABB(0, 0, 0, 1, 0.5, 1);
         AABB slabFeet = new AABB(0.65, 0.42, 0.2, 1.15, 0.499, 0.8);
         require(EdgePrediction.reachesEdge(0.15, 100, d -> slabFeet.move(d, 0, 0).intersects(slab)), "Predict support loss on partial-height slab geometry");
+        require(!EdgePrediction.reachesEdge(slabFeet, -0.15, 0, 100, slab::intersects)
+            && EdgePrediction.reachesEdge(slabFeet, 0.15, 0, 100, slab::intersects),
+            "Detect support loss from momentum even while the movement input points back onto the block");
         var jumpReset = new dev.technix.logic.client.combat.JumpResetTiming();
         require(!jumpReset.update(0, true, 100, 100, 0, 0), "Do not jump without an incoming hit");
         require(jumpReset.update(10, true, 100, 100, 0.99, 0.99), "Full chance and accuracy jump immediately on a new hit");

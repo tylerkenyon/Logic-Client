@@ -136,6 +136,10 @@ public final class OverlayRenderer implements AutoCloseable {
     }
 
 
+    public void renderFrame() {
+        if (prepareForFrame()) renderOverlay();
+    }
+
     public boolean prepareForFrame() {
         try {
             renderer.refreshVulkanContext();
@@ -143,10 +147,7 @@ public final class OverlayRenderer implements AutoCloseable {
             renderer.recordPendingTransfers();
             return true;
         } catch (Throwable t) {
-            LOGGER.error("ImGui prepareForFrame failed; disabling overlay", t);
-            diagnostics.accept("overlay frame setup failed: " + t);
-            renderer.reportCaptureFailure();
-            close();
+            handleFrameFailure("frame setup", t);
             return false;
         }
     }
@@ -182,6 +183,7 @@ public final class OverlayRenderer implements AutoCloseable {
                 }
             }
             renderer.endElementsFrame();
+            renderer.endFrame();
 
             if (!renderer.isFontTextureReady()) {
                 return;
@@ -193,11 +195,20 @@ public final class OverlayRenderer implements AutoCloseable {
             }
             renderer.submit(context, target.get(), blurred);
         } catch (Throwable t) {
-            LOGGER.error("ImGui renderOverlay failed; disabling overlay", t);
-            diagnostics.accept("overlay draw failed: " + t);
-            renderer.reportCaptureFailure();
-            close();
+            handleFrameFailure("draw", t);
         }
+    }
+
+    private void handleFrameFailure(String stage, Throwable failure) {
+        if (renderer.recoverProtectedContext(failure)) {
+            LOGGER.warn("Mica {} failed. Rebuilding the protected overlay next frame.", stage, failure);
+            diagnostics.accept("overlay " + stage + " failed; retrying protected context: " + failure);
+            return;
+        }
+        LOGGER.error("Mica {} failed. Disabling the overlay.", stage, failure);
+        diagnostics.accept("overlay " + stage + " failed: " + failure);
+        renderer.reportCaptureFailure();
+        close();
     }
 
     @NotNull

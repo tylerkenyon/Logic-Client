@@ -1,7 +1,6 @@
 # mica — public API
 
-A library that lets you draw Dear ImGui overlays on top of Minecraft 26.2's native Vulkan
-renderer, with every Mojang API touchpoint isolated behind one interface.
+Mica draws Dear ImGui overlays on Minecraft 26.2 and 26.3. Use the Mica jar built for the Minecraft version you target.
 
 ## Quick start
 
@@ -9,7 +8,7 @@ renderer, with every Mojang API touchpoint isolated behind one interface.
 import dev.technix.mica.api.OverlayRenderer;
 import dev.technix.mica.api.OverlayElement;
 import dev.technix.mica.api.RenderContext;
-import dev.technix.mica.api.compat.v26_2.MinecraftCompatImpl_26_2;
+import dev.technix.mica.api.MinecraftCompat;
 import dev.technix.mica.internal.util.Draw;
 import dev.technix.mica.internal.ImGuiFonts;
 
@@ -24,7 +23,7 @@ public final class MyHud implements OverlayElement {
 
 // On client start
 OverlayRenderer renderer = OverlayRenderer.builder()
-        .withMinecraftCompat(new MinecraftCompatImpl_26_2())
+        .withMinecraftCompat(MinecraftCompat.current())
         .build();
 renderer.registerElement(new MyHud());
 
@@ -40,8 +39,8 @@ through the platform's `ActiveRenderers` facade.
 
 | Type | Purpose |
 |------|---------|
-| `OverlayRenderer` | The main entrypoint. Build with `OverlayRenderer.builder()`, call `prepareForFrame()` / `renderOverlay()` from your own driver if you replace the bundled mixins. |
-| `MinecraftCompat` | The version-shaped bridge. One implementation per Minecraft version (`api/compat/v26_2/MinecraftCompatImpl_26_2`). Provides Vulkan context, host command buffer, texture image views, and atlas sprite lookups. |
+| `OverlayRenderer` | The main entrypoint. Build with `OverlayRenderer.builder()`. Custom render drivers can call `renderFrame()` once per frame. |
+| `MinecraftCompat` | The game adapter. `MinecraftCompat.current()` selects the adapter for the Stonecutter build. Provides Vulkan context, host command buffer, texture image views, and atlas sprite lookups. |
 | `OverlayElement` | Author-side interface. Implement `name`, `isVisible`, `render(context)`. |
 | `RenderContext` | Per-frame draw list, framebuffer size, blur texture ID, elapsed time. |
 | `Palette` | Shared colour tokens (`PANEL`, `ACCENT`, `TEXT`, ...). |
@@ -68,7 +67,6 @@ which is treated as a public helper).
 
 ## Forward compatibility
 
-When a new Minecraft release changes a Mojang-internal class name or signature, only the
-matching `api/compat/vN/MinecraftCompatImpl_N` adapter needs to change. The rest of the
-platform — including user overlay elements — is untouched. To support a new version, copy
-the existing adapter, fix the broken imports, and pass the new instance to the builder.
+Add a Stonecutter target and select its adapter in `MinecraftCompat.current()`.
+The bundled render hook uses `GuiRenderer.render()` on 26.2 and the tail of
+`GameRenderer.render()` on 26.3.

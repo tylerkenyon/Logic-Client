@@ -44,12 +44,13 @@ public final class LiveTransformer implements Opcodes {
         }
         switch (node.name) {
             //? if >=26.3 {
-            /*case "com/mojang/blaze3d/platform/Window" ->
-                guard(method(node, "handleEvent", "(Lorg/lwjgl/sdl/SDL_Event;)V"),
+            /*case "com/mojang/blaze3d/platform/Window" -> {
+                if (injectMica) guard(method(node, "handleEvent", "(Lorg/lwjgl/sdl/SDL_Event;)V"),
                     "foreignWindowEvent", "(Ljava/lang/Object;Ljava/lang/Object;)Z", insns -> {
                         insns.add(new VarInsnNode(ALOAD, 0));
                         insns.add(new VarInsnNode(ALOAD, 1));
                     });
+            }
             *///?}
             case "net/minecraft/client/gui/Font" -> {
                 for (MethodNode method : node.methods) {
@@ -131,7 +132,17 @@ public final class LiveTransformer implements Opcodes {
                 attackGuard.add(new InsnNode(ICONST_0));
                 attackGuard.add(new InsnNode(IRETURN));
                 attackGuard.add(attackAllowed);
-                method(node, "startAttack", "()Z").instructions.insert(attackGuard);
+                MethodNode startAttack = method(node, "startAttack", "()Z");
+                startAttack.instructions.insert(attackGuard);
+                int dispatchSites = 0;
+                for (AbstractInsnNode insn : startAttack.instructions.toArray()) {
+                    if (insn instanceof MethodInsnNode attack && attack.owner.equals("net/minecraft/client/multiplayer/MultiPlayerGameMode")
+                            && (attack.name.equals("attack") || attack.name.equals("piercingAttack"))) {
+                        startAttack.instructions.insertBefore(attack, call("attackDispatched", "()V"));
+                        dispatchSites++;
+                    }
+                }
+                if (dispatchSites != 2) throw new IllegalStateException("Vanilla attack dispatch sites were not found");
             }
             case "net/minecraft/client/multiplayer/MultiPlayerGameMode" -> {
                 InsnList head = new InsnList();
@@ -192,7 +203,6 @@ public final class LiveTransformer implements Opcodes {
         if (prepareAtStart) render.instructions.insert(call("beforeGuiRender", "()V"));
         for (AbstractInsnNode instruction : render.instructions.toArray()) {
             if (instruction.getOpcode() != RETURN) continue;
-            if (!prepareAtStart) render.instructions.insertBefore(instruction, call("beforeGuiRender", "()V"));
             render.instructions.insertBefore(instruction, call("afterGuiRender", "()V"));
         }
     }

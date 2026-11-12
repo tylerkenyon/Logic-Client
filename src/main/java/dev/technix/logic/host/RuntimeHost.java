@@ -127,6 +127,7 @@ public final class RuntimeHost {
     }
     public static void keybinds() { invoke("keybinds"); }
     public static void afterKeybinds() { invoke("afterKeybinds"); }
+    public static void attackDispatched() { invoke("attackDispatched"); }
 
     private static final class PayloadLoader extends URLClassLoader {
         private final Path jar;

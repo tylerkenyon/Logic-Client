@@ -59,7 +59,16 @@ public final class GameInput {
     }
 
     //? if >=26.3 {
-    /*private static final class Keys {
+    /*public static boolean isForeignWindowEvent(Object host, Object event) {
+        var window = (com.mojang.blaze3d.platform.Window) host;
+        var sdlEvent = (org.lwjgl.sdl.SDL_Event) event;
+        int type = sdlEvent.type();
+        return type >= org.lwjgl.sdl.SDLEvents.SDL_EVENT_WINDOW_FIRST
+            && type <= org.lwjgl.sdl.SDLEvents.SDL_EVENT_WINDOW_LAST
+            && sdlEvent.window().windowID() != org.lwjgl.sdl.SDLVideo.SDL_GetWindowID(window.handle());
+    }
+
+    private static final class Keys {
         static final java.util.Map<Integer, Integer> TO_GAME = new java.util.HashMap<>();
         static final java.util.Map<Integer, Integer> FROM_GAME = new java.util.HashMap<>();
 

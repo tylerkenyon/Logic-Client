@@ -74,6 +74,8 @@ public final class Eagle extends Module {
         AABB releaseFeet = feet.deflate(clearance, 0, clearance);
         boolean edge, safelyClear;
         boolean align = mode.get().equals("Autoalign");
+        var velocity = mc.player.getDeltaMovement();
+        double horizontalSpeed = Math.hypot(velocity.x, velocity.z);
         if (magnitude < 0.001) {
             edge = controlling && !supported(feet);
             safelyClear = supported(releaseFeet);
@@ -82,9 +84,7 @@ public final class Eagle extends Module {
             double yaw = Math.toRadians(mc.player.getYRot());
             double dx = (strafe * Math.cos(yaw) - forward * Math.sin(yaw)) / magnitude;
             double dz = (forward * Math.cos(yaw) + strafe * Math.sin(yaw)) / magnitude;
-            var velocity = mc.player.getDeltaMovement();
-
-            double speed = Math.clamp(Math.max(mc.player.getSpeed(), Math.hypot(velocity.x, velocity.z)), 0.01, 2);
+            double speed = Math.clamp(Math.max(mc.player.getSpeed(), horizontalSpeed), 0.01, 2);
             edge = EdgePrediction.reachesEdge(speed, selectedLead, d -> supported(feet.move(dx * d, 0, dz * d)));
             double[] aligned = EagleAlignment.alignedHeading(dx, dz);
             if (align) edge |= EdgePrediction.reachesEdge(speed, selectedLead,
@@ -93,6 +93,11 @@ public final class Eagle extends Module {
                 d -> supported(releaseFeet.move(dx * d, 0, dz * d)));
             if (align) safelyClear &= !EdgePrediction.reachesEdge(speed, selectedLead + 50,
                 d -> supported(releaseFeet.move(aligned[0] * d, 0, aligned[1] * d)));
+        }
+        // Existing momentum can carry the player over an edge while turning or releasing movement.
+        if (horizontalSpeed >= 0.001) {
+            edge |= EdgePrediction.reachesEdge(feet, velocity.x, velocity.z, selectedLead, this::supported);
+            safelyClear &= !EdgePrediction.reachesEdge(releaseFeet, velocity.x, velocity.z, selectedLead + 50, this::supported);
         }
         if (alignment.update(edge, safelyClear, clientTick, align)) pressSneak();
         else {

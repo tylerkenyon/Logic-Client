@@ -1,12 +1,14 @@
 package dev.technix.logic.client;
 
 import dev.technix.logic.Logic;
+import dev.technix.logic.client.combat.HitSelectTiming.AttackSource;
 import dev.technix.logic.client.gui.ClickGuiRenderer;
 import dev.technix.logic.client.module.ModuleManager;
 import dev.technix.logic.client.module.impl.ClickGui;
 import dev.technix.logic.client.module.impl.Sprint;
 import dev.technix.logic.client.module.impl.AimAssist;
 import dev.technix.logic.client.module.impl.Triggerbot;
+import dev.technix.logic.client.module.impl.HitSelect;
 import dev.technix.logic.client.module.impl.ESP;
 import dev.technix.logic.client.module.impl.Indicators;
 import dev.technix.logic.client.module.impl.Trajectories;
@@ -77,6 +79,7 @@ public final class LogicClient implements ClientModInitializer {
     private final ClientSpoofer clientSpoofer = new ClientSpoofer();
     private final NameHider nameHider = new NameHider();
     private final AntiBot antiBot = new AntiBot();
+    private final HitSelect hitSelect = new HitSelect();
     private final AnchorMacro anchorMacro = new AnchorMacro();
     private final TimerModule timer = new TimerModule();
     private ConfigStore config;
@@ -104,6 +107,7 @@ public final class LogicClient implements ClientModInitializer {
         MODULES.register(new AntiAction());
         MODULES.register(new AutoShieldBreaker());
         MODULES.register(new Triggerbot());
+        MODULES.register(hitSelect);
         MODULES.register(new SprintReset());
         MODULES.register(new JumpReset());
         MODULES.register(new ESP());
@@ -148,6 +152,7 @@ public final class LogicClient implements ClientModInitializer {
     public static void startTick() {
         LogicClient client = instance;
         if (client == null || !client.running || client.shutdownRequested) return;
+        client.hitSelect.startTick();
         MODULES.get(JumpReset.class).startTick();
         client.eagle.startTick();
     }
@@ -160,14 +165,26 @@ public final class LogicClient implements ClientModInitializer {
 
     public static boolean attackClick(boolean manualClick) {
         if (!running()) return manualClick;
+        var hitSelect = instance.hitSelect;
+        hitSelect.clearClick();
         var shieldBreaker = MODULES.get(AutoShieldBreaker.class);
         if (shieldBreaker.busy()) return shieldBreaker.attackClick();
+        var triggerbot = MODULES.get(Triggerbot.class);
+        if (hitSelect.managesEntityClick()) return hitSelect.attackClick(manualClick, triggerbot::automaticAttackReady);
         MODULES.get(AutoTool.class).beforeAttack(manualClick);
-        return MODULES.get(Triggerbot.class).attackClick(manualClick);
+        return triggerbot.attackClick(manualClick);
+    }
+
+    public static void attackDispatched() {
+        if (running() && instance.hitSelect.attackDispatched() == AttackSource.TRIGGERBOT) {
+            MODULES.get(Triggerbot.class).recordAutomaticAttack();
+        }
     }
 
     public static void afterKeybinds() {
-        if (running()) MODULES.get(SprintReset.class).afterKeybinds();
+        if (!running()) return;
+        instance.hitSelect.clearClick();
+        MODULES.get(SprintReset.class).afterKeybinds();
     }
 
     public static boolean hideVanillaNametag(Object entity) {
