@@ -21,6 +21,11 @@ public final class ConfigStore {
     private String lastSaved;
     private long nextSave;
     private boolean writable = true;
+    private java.util.function.Consumer<String> diagnostics = message -> {};
+
+    public void setDiagnostics(java.util.function.Consumer<String> diagnostics) {
+        this.diagnostics = java.util.Objects.requireNonNull(diagnostics);
+    }
 
     public ConfigStore(ModuleManager modules, ClickGuiRenderer gui, UiTheme theme) {
         this(defaultPath(), modules, gui, theme);
@@ -41,11 +46,13 @@ public final class ConfigStore {
             JsonObject root;
             try { root = JsonParser.parseString(Files.readString(file)).getAsJsonObject(); }
             catch (IOException | RuntimeException failure) {
+                diagnostics.accept("configuration read failed: " + failure);
                 try {
                     Path backup = file.resolveSibling("config-invalid-" + System.currentTimeMillis() + ".json");
                     Files.copy(file, backup);
                     Logic.LOGGER.warn("Invalid configuration preserved at {}", backup, failure);
                 } catch (IOException backupFailure) {
+                    diagnostics.accept("configuration backup failed: " + backupFailure);
                     writable = false;
                     Logic.LOGGER.error("Cannot preserve invalid configuration; automatic saving disabled", backupFailure);
                 }
@@ -60,6 +67,7 @@ public final class ConfigStore {
             if (root.has("panels") && root.get("panels").isJsonObject()) gui.loadLayout(root.getAsJsonObject("panels"));
             if (root.has("modules") && root.get("modules").isJsonObject()) {
                 JsonObject stored = root.getAsJsonObject("modules");
+                diagnostics.accept("configuration parsed: modules=" + stored.size() + ", registered=" + modules.all().size());
                 for (var module : modules.all()) {
                     if (!stored.has(module.name()) || !stored.get(module.name()).isJsonObject()) continue;
                     JsonObject state = stored.getAsJsonObject(module.name());
@@ -67,8 +75,13 @@ public final class ConfigStore {
                         JsonObject settings = state.getAsJsonObject("settings");
                         for (Setting<?> setting : module.settings()) {
                             if (!settings.has(setting.name())) continue;
+                            if (module.name().equals("Interface") && setting.name().equals("Screenshare protection"))
+                                diagnostics.accept("configuration stored protection=" + settings.get(setting.name()));
                             try { readSetting(setting, settings.get(setting.name())); }
-                            catch (RuntimeException failure) { Logic.LOGGER.warn("Ignoring invalid setting {} / {}", module.name(), setting.name()); }
+                            catch (RuntimeException failure) {
+                                diagnostics.accept("configuration setting failed: " + module.name() + " / " + setting.name() + ": " + failure);
+                                Logic.LOGGER.warn("Ignoring invalid setting {} / {}", module.name(), setting.name());
+                            }
                         }
                     }
                     try {
@@ -148,6 +161,9 @@ public final class ConfigStore {
             try { Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
             catch (AtomicMoveNotSupportedException ignored) { Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING); }
             lastSaved = output;
-        } catch (IOException failure) { Logic.LOGGER.warn("Could not save {}", file, failure); }
+        } catch (IOException failure) {
+            diagnostics.accept("configuration save failed: " + failure);
+            Logic.LOGGER.warn("Could not save {}", file, failure);
+        }
     }
 }

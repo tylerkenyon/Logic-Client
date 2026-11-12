@@ -67,10 +67,16 @@ public final class ProtectedOverlayCheck {
                         var nativeWindow = new com.sun.jna.platform.win32.WinDef.HWND(com.sun.jna.Pointer.createConstant(hwnd));
                         //? if >=26.3 {
                         /*var windows = com.sun.jna.platform.win32.User32.INSTANCE;
+                        var focusedBefore = windows.GetForegroundWindow();
+                        int style = windows.GetWindowLong(nativeWindow, -20);
+                        if ((style & 0x08080020) != 0x08080020)
+                            throw new AssertionError("Overlay must be non-activating, layered and mouse-transparent");
                         if (!windows.SetWindowPos(nativeWindow, null, 32, 32, 160, 120, 0x0014))
                             throw new AssertionError("Could not position the SDL overlay");
                         windows.ShowWindow(nativeWindow, 4);
                         SDL_PumpEvents();
+                        if (!java.util.Objects.equals(focusedBefore, windows.GetForegroundWindow()))
+                            throw new AssertionError("Showing the overlay stole foreground focus");
                         overlay.verifyCaptureProtection();
                         *///?}
                         var api = com.sun.jna.Native.load("user32", ProtectedOverlay.CaptureApi.class,
@@ -81,7 +87,7 @@ public final class ProtectedOverlayCheck {
                         //? if <26.3 {
                         boolean visible = glfwGetWindowAttrib(handle, GLFW_VISIBLE) != GLFW_FALSE;
                         //?} else {
-                        /*boolean visible = (SDL_GetWindowFlags(handle) & SDL_WINDOW_HIDDEN) == 0;
+                        /*boolean visible = com.sun.jna.platform.win32.User32.INSTANCE.IsWindowVisible(nativeWindow);
                         *///?}
                         if (!rejected || visible) {
                             throw new AssertionError("Overlay must hide and reject rendering when protection is lost");

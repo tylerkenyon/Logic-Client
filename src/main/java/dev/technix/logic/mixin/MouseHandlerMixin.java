@@ -14,6 +14,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value = MouseHandler.class, priority = 1100)
 public class MouseHandlerMixin {
+    @Inject(method = "turnPlayer(D)V", at = @At("HEAD"), cancellable = true)
+    private void logic$blockMenuMouseLook(double delta, CallbackInfo ci) {
+        if (logic$isOpen()) ci.cancel();
+    }
+
     private static boolean logic$isOpen() {
         return LogicClient.MODULES.byName("ClickGUI")
             .filter(module -> ((ClickGui) module).open()).isPresent();

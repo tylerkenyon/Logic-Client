@@ -238,4 +238,11 @@ tasks.register('verifyFonts', JavaExec) {
     systemProperty 'java.io.tmpdir', nativeTemp.absolutePath
     doFirst { nativeTemp.mkdirs() }
 }
+tasks.register('verifyOverlayHost', JavaExec) {
+    group = 'verification'
+    description = 'Exercises the SDL overlay against a separate host OpenGL window.'
+    dependsOn tasks.named('testClasses'), tasks.named('clientClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.technix.mica.SdlOverlayHostCheck'
+}
 tasks.named('check') { dependsOn tasks.named('verifyFonts') }

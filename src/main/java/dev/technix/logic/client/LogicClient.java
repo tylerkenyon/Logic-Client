@@ -129,7 +129,11 @@ public final class LogicClient implements ClientModInitializer {
         MODULES.register(new dev.technix.logic.client.module.impl.SelfDestruct());
         config = configFile == null ? new ConfigStore(MODULES, clickGuiRenderer, THEME)
             : new ConfigStore(configFile, MODULES, clickGuiRenderer, THEME);
+        if (injected) config.setDiagnostics(dev.technix.logic.inject.NativeBridge::log);
         config.load();
+        if (injected) dev.technix.logic.inject.NativeBridge.log("configuration: file=" + configFile
+            + ", exists=" + (configFile != null && java.nio.file.Files.exists(configFile))
+            + ", captureProtection=" + interfaceModule.screenshareProtection.get());
 
          
         if (injected) startClient();
