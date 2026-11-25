@@ -98,7 +98,7 @@ public final class Bootstrap {
             ownsRenderer = injectMica;
             InjectionHooks.ownsMica = micaHooks;
             if (injectMica) InjectedMica.start().setDiagnostics(NativeBridge::log);
-            new LogicClient().initializeInjected(dataDirectory == null ? null : java.nio.file.Path.of(dataDirectory, "config.json"));
+            new LogicClient().initializeInjected(dataDirectory == null ? null : java.nio.file.Path.of(dataDirectory, "latest.json"));
             InjectionHooks.active = true;
             NativeBridge.log("client initialised: Logic ready; Mica " + (injectMica ? "injected from payload" : "already active"));
         } catch (Throwable failure) {

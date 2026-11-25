@@ -4,6 +4,7 @@ import dev.technix.mica.internal.GameInput;
 import com.google.gson.JsonObject;
 import dev.technix.logic.Logic;
 import dev.technix.logic.client.LogicClient;
+import dev.technix.logic.client.config.ProfileManager;
 import dev.technix.logic.client.module.Category;
 import dev.technix.logic.client.module.Module;
 import dev.technix.logic.client.module.impl.ClickGui;
@@ -47,6 +48,25 @@ public final class ClickGuiRenderer implements OverlayElement {
     private float originX, originY, scale, mouseX, mouseY, opening, dt, clipTop, clipBottom;
     private boolean leftClick, rightClick, modeClicked, interactive, light;
     private Panel inputPanel;
+    private ProfileManager profiles;
+    private final StringSetting profileName = new StringSetting("Name", "", "");
+    private boolean profilesExpanded;
+    private ProfileManager.Action profileConfirmation;
+    private String confirmationName;
+
+    public void setProfiles(ProfileManager profiles) { this.profiles = profiles; }
+
+    public void cancelInteractions() {
+        dragging = null; draggingPanel = null; expandedMode = null;
+        profileConfirmation = null;
+        clickGui.cancelInteractions();
+    }
+
+    public void resetLayout() {
+        for (Category category : CATEGORIES) panels.put(category, new Panel());
+        order.clear(); order.addAll(List.of(CATEGORIES));
+        modules.clear(); animation.clear();
+    }
 
     public ClickGuiRenderer(ClickGui clickGui) {
         this.clickGui = clickGui;
@@ -79,7 +99,8 @@ public final class ClickGuiRenderer implements OverlayElement {
         }
         interactive = clickGui.open() && opening > 0.8f;
         leftClick = rightClick = modeClicked = false;
-        boolean editingText = false;
+        boolean editingText = profiles != null && profilesExpanded && panels.get(Category.CONFIGURATION).expanded
+            && clickGui.editingSetting() == profileName;
         for (Module module : LogicClient.MODULES.all()) for (Setting<?> setting : module.settings()) {
             if (clickGui.editingSetting() == setting) {
                 ModuleView view = modules.get(module);
@@ -162,6 +183,7 @@ public final class ClickGuiRenderer implements OverlayElement {
     private float fullHeight(Category category) {
         float h = 8;
         for (Module module : list(category)) h += 40 + settingsHeight(module) * modules.computeIfAbsent(module, ModuleView::new).expansion;
+        if (category == Category.CONFIGURATION && profiles != null) h += profilesHeight();
         return h;
     }
 
@@ -211,6 +233,10 @@ public final class ClickGuiRenderer implements OverlayElement {
         draw.pushClipRect(px(x), py(clipTop), px(x + WIDTH), py(clipBottom), true);
         try {
             float y = body + 4 - panel.scroll;
+            if (category == Category.CONFIGURATION && profiles != null) {
+                drawProfiles(x, y, active && panel.expanded && panel.expansion > 0.98f);
+                y += profilesHeight();
+            }
             for (Module module : list) {
                 ModuleView view = modules.get(module);
                 drawModule(module, view, x, y, active && panel.expanded && panel.expansion > 0.98f);
@@ -221,6 +247,103 @@ public final class ClickGuiRenderer implements OverlayElement {
             float thumb = Math.max(18, visibleHeight * visibleHeight / fullHeight);
             rect(x + WIDTH - 4, body + panel.scroll / maxScroll * (visibleHeight - thumb), 2, thumb, 1, "scrollbar", 1);
         }
+    }
+
+    private List<String> profileMessages() {
+        String message = profiles.message();
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < message.length(); i++) {
+            char character = message.charAt(i);
+            if (character == '\n' || textWidth(line.toString() + character, 12) > WIDTH - 32) {
+                lines.add(line.toString()); line.setLength(0);
+                if (character == '\n') continue;
+            }
+            line.append(character);
+        }
+        if (!line.isEmpty()) lines.add(line.toString());
+        return lines;
+    }
+
+    private float profilesHeight() {
+        return 40 + (profilesExpanded ? 28 + Math.max(1, profiles.names().size()) * 29 + 60 + 96
+            + (profileConfirmation == null ? 0 : 56) + profileMessages().size() * 17 + 8 : 0);
+    }
+
+    private void drawProfiles(float x, float y, boolean active) {
+        if (profiles.pending()) profileConfirmation = null;
+        float left = x + 16, right = x + WIDTH - 16;
+        boolean headerHover = active && bodyHit(x + 6, y, WIDTH - 12, 36);
+        if (headerHover) rect(x + 6, y, WIDTH - 12, 36, LogicClient.THEME.radiusSm, "bg-elevated", 1);
+        text("Profiles", x + 14, y + 11, 14, false, "text-primary");
+        textRight(profilesExpanded ? "-" : "+", x + WIDTH - 15, y + 11, 14, "text-secondary");
+        if (headerHover && (leftClick || rightClick)) {
+            profilesExpanded = !profilesExpanded; profileConfirmation = null;
+            leftClick = rightClick = false;
+            if (profilesExpanded) profiles.request(ProfileManager.Action.REFRESH, "", "");
+        }
+        if (!profilesExpanded) return;
+        y += 40;
+        text("Current session — autosaved", left, y + 5, 12, false, "text-muted");
+        y += 28;
+        if (profiles.names().isEmpty()) {
+            text("No saved configs", left, y + 7, 13, false, "text-muted");
+            y += 29;
+        } else for (String name : profiles.names()) {
+            boolean selected = name.equals(profiles.selected());
+            boolean hover = active && !profiles.pending() && bodyHit(left, y, right - left, 27);
+            if (selected || hover) rect(left, y, right - left, 27, LogicClient.THEME.radiusSm, "accent-subtle", 1);
+            rowLabel(name, left + 8, y + 7, right - 6, 13, selected ? "text-primary" : "text-secondary");
+            if (hover && leftClick) {
+                profiles.select(name); profileName.set(name); profileConfirmation = null;
+                leftClick = false;
+            }
+            y += 29;
+        }
+        drawSetting(profileName, x, y, active && !profiles.pending());
+        y += 60;
+        boolean enabled = active && !profiles.pending();
+        boolean selected = !profiles.selected().isEmpty();
+        float half = (right - left - 6) / 2;
+        if (profileButton("Load", left, y, half, enabled && selected))
+            profiles.request(ProfileManager.Action.LOAD, profiles.selected(), "");
+        if (profileButton("Save as", left + half + 6, y, half, enabled))
+            profiles.request(ProfileManager.Action.SAVE_AS, profileName.get(), "");
+        y += 32;
+        if (profileButton("Overwrite", left, y, half, enabled && selected)) {
+            profileConfirmation = ProfileManager.Action.OVERWRITE; confirmationName = profiles.selected();
+        }
+        if (profileButton("Rename", left + half + 6, y, half, enabled && selected))
+            profiles.request(ProfileManager.Action.RENAME, profiles.selected(), profileName.get());
+        y += 32;
+        if (profileButton("Delete", left, y, half, enabled && selected)) {
+            profileConfirmation = ProfileManager.Action.DELETE; confirmationName = profiles.selected();
+        }
+        if (profileButton("Refresh", left + half + 6, y, half, enabled))
+            profiles.request(ProfileManager.Action.REFRESH, "", "");
+        y += 32;
+        if (profileConfirmation != null) {
+            rowLabel((profileConfirmation == ProfileManager.Action.DELETE ? "Delete " : "Overwrite ") + confirmationName + "?",
+                left, y + 5, right, 12, "warning");
+            y += 24;
+            if (profileButton("Confirm", left, y, half, enabled)) {
+                profiles.request(profileConfirmation, confirmationName, ""); profileConfirmation = null;
+            }
+            if (profileButton("Cancel", left + half + 6, y, half, enabled)) profileConfirmation = null;
+            y += 32;
+        }
+        for (String line : profileMessages()) {
+            text(line, left, y + 3, 12, false, profiles.error() ? "danger" : "text-muted"); y += 17;
+        }
+    }
+
+    private boolean profileButton(String label, float x, float y, float width, boolean active) {
+        boolean hover = active && bodyHit(x, y, width, 27);
+        rect(x, y, width, 27, LogicClient.THEME.radiusSm, hover ? "accent-subtle" : "bg-secondary", 1);
+        text(label, x + (width - textWidth(label, 13)) / 2, y + 7, 13, false, active ? "text-primary" : "text-muted");
+        if (!hover || !leftClick) return false;
+        leftClick = false;
+        return true;
     }
 
     private void drawModule(Module module, ModuleView view, float x, float y, boolean active) {

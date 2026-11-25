@@ -20,6 +20,7 @@ public final class NumberSetting extends Setting<Double> {
         set(value);
     }
 
+    public double step() { return step; }
     public double min() { return min; }
     public double max() { return max; }
 

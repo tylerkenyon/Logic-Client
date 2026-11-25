@@ -11,12 +11,15 @@ import dev.technix.logic.event.Subscribe;
 import dev.technix.logic.event.impl.ClientTickEvent;
 import dev.technix.logic.event.impl.FrameUpdateEvent;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 public final class AimAssist extends Module {
     private final ModeSetting targetBone = registerSetting(new ModeSetting(
-        "Target bone", "Choose the point to aim toward", "Chest", "Head", "Chest", "Pelvis", "Closest"));
+        "Target bone", "Closest follows your view ray; Optimal uses the nearest inset hitbox point",
+        "Chest", "Head", "Chest", "Pelvis", "Closest", "Optimal"));
     private final NumberSetting horizontalMidpoint = registerSetting(new NumberSetting(
         "Horizontal midpoint", "Aim offset: -100 left, 0 unchanged, 100 right; stays inside the hitbox", 0, -100, 100, 1));
     private final NumberSetting verticalMidpoint = registerSetting(new NumberSetting(
@@ -54,15 +57,19 @@ public final class AimAssist extends Module {
             return;
         }
 
-        if (validTarget(target) && angularDistance(target, 1) <= fov.get() * 0.5 + 5) return;
+        boolean optimal = targetBone.get().equals("Optimal");
+        boolean followView = targetBone.get().equals("Closest");
+        if (!optimal && !followView && validTarget(target) && angularDistance(target, 1) <= fov.get() * 0.5 + 5) return;
 
         target = null;
-        double bestAngle = fov.get() * 0.5;
+        double bestScore = Double.POSITIVE_INFINITY;
         for (var entity : mc.level.entitiesForRendering()) {
             if (!(entity instanceof LivingEntity candidate) || !validTarget(candidate)) continue;
             double angle = angularDistance(candidate, 1);
-            if (angle <= bestAngle) {
-                bestAngle = angle;
+            if (angle > fov.get() * 0.5) continue;
+            double score = optimal ? optimalYawDistance(candidate) : angle;
+            if (score < bestScore) {
+                bestScore = score;
                 target = candidate;
             }
         }
@@ -70,7 +77,7 @@ public final class AimAssist extends Module {
 
     @Subscribe
     private void onFrame(FrameUpdateEvent event) {
-        if (dev.technix.logic.client.LogicClient.anchorBusy()) return;
+        if (dev.technix.logic.client.LogicClient.anchorBusy() || dev.technix.logic.client.LogicClient.keyPearlBusy()) return;
         var mc = mc();
         if (!CombatTargets.canAct(mc) || (holdAttack.get() && !mc.options.keyAttack.isDown())
                 || !validTarget(target)) {
@@ -103,19 +110,93 @@ public final class AimAssist extends Module {
         var mc = mc();
         return candidate != null && !candidate.isRemoved() && candidate.level() == mc.level
             && CombatTargets.valid(mc, candidate, playersOnly.get(), ignoreTeams.get(), visibleOnly.get())
-            && mc.player.distanceToSqr(candidate) <= range.get() * range.get();
+            && targetDistanceSqr(candidate) <= range.get() * range.get();
+    }
+
+    private double targetDistanceSqr(LivingEntity candidate) {
+        if (!targetBone.get().equals("Optimal")) return mc().player.distanceToSqr(candidate);
+        Vec3 eye = mc().player.getEyePosition(1);
+        return eye.distanceToSqr(nearestPoint(targetBox(candidate, 1), eye));
+    }
+
+    private static AABB interpolatedBox(Entity entity, float partialTick) {
+        return entity.getBoundingBox().move(entity.getPosition(partialTick).subtract(entity.position()));
+    }
+
+    private AABB targetBox(LivingEntity candidate, float partialTick) {
+        AABB box = interpolatedBox(candidate, partialTick);
+        if (targetBone.get().equals("Optimal") && candidate instanceof EnderDragon dragon) {
+            Vec3 eye = mc().player.getEyePosition(partialTick);
+            double closest = Double.POSITIVE_INFINITY;
+            for (var part : dragon.getSubEntities()) {
+                AABB partBox = interpolatedBox(part, partialTick);
+                double distance = eye.distanceToSqr(nearestPoint(partBox, eye));
+                if (distance < closest) {
+                    box = partBox;
+                    closest = distance;
+                }
+            }
+        }
+        return box;
+    }
+
+    private double optimalYawDistance(LivingEntity candidate) {
+        Vec3 eye = mc().player.getEyePosition(1);
+        Vec3 delta = nearestPoint(targetBox(candidate, 1), eye).subtract(eye);
+        if (delta.horizontalDistanceSqr() < 1.0e-12) return 0;
+        return Math.abs(CombatMath.wrapDegrees(targetYaw(delta) - mc().player.getYRot()));
     }
 
     private Vec3 targetDelta(LivingEntity candidate, float partialTick) {
-        var box = candidate.getBoundingBox().move(candidate.getPosition(partialTick).subtract(candidate.position()));
+        AABB box = targetBox(candidate, partialTick);
         Vec3 eye = mc().player.getEyePosition(partialTick);
         double targetY = switch (targetBone.get()) {
             case "Head" -> box.minY + candidate.getEyeHeight();
             case "Pelvis" -> box.minY + (box.maxY - box.minY) * 0.45;
             default -> box.minY + (box.maxY - box.minY) * 0.70;
         };
-        return aimPoint(box, eye, targetY, targetBone.get().equals("Closest"),
-            horizontalMidpoint.get(), verticalMidpoint.get(), mc().player.getYRot()).subtract(eye);
+        Vec3 point = switch (targetBone.get()) {
+            case "Closest" -> closestAimPoint(box, eye, mc().player.getViewVector(1));
+            case "Optimal" -> optimalAimPoint(box, eye);
+            default -> new Vec3((box.minX + box.maxX) * 0.5, targetY, (box.minZ + box.maxZ) * 0.5);
+        };
+        return offsetPoint(box, point, horizontalMidpoint.get(), verticalMidpoint.get(), mc().player.getYRot()).subtract(eye);
+    }
+
+    public static Vec3 optimalAimPoint(AABB box, Vec3 eye) {
+        double insetX = Math.min(0.12, (box.maxX - box.minX) * 0.5);
+        double insetY = Math.min(0.12, (box.maxY - box.minY) * 0.5);
+        double insetZ = Math.min(0.12, (box.maxZ - box.minZ) * 0.5);
+        return new Vec3(Math.clamp(eye.x, box.minX + insetX, box.maxX - insetX),
+            Math.clamp(eye.y, box.minY + insetY, box.maxY - insetY),
+            Math.clamp(eye.z, box.minZ + insetZ, box.maxZ - insetZ));
+    }
+
+    private static Vec3 nearestPoint(AABB box, Vec3 point) {
+        return new Vec3(Math.clamp(point.x, box.minX, box.maxX),
+            Math.clamp(point.y, box.minY, box.maxY), Math.clamp(point.z, box.minZ, box.maxZ));
+    }
+
+    public static Vec3 closestAimPoint(AABB box, Vec3 eye, Vec3 look) {
+        if (box.contains(eye)) return eye;
+        if (look.lengthSqr() < 1.0e-12) return nearestPoint(box, eye);
+        Vec3 direction = look.normalize();
+        double length = eye.distanceTo(box.getCenter())
+            + Math.sqrt(Math.pow(box.maxX - box.minX, 2) + Math.pow(box.maxY - box.minY, 2)
+                + Math.pow(box.maxZ - box.minZ, 2));
+        var intersection = box.clip(eye, eye.add(direction.scale(length)));
+        if (intersection.isPresent()) return intersection.get();
+
+        double low = 0, high = length;
+        for (int i = 0; i < 40; i++) {
+            double first = low + (high - low) / 3;
+            double second = high - (high - low) / 3;
+            Vec3 a = eye.add(direction.scale(first));
+            Vec3 b = eye.add(direction.scale(second));
+            if (a.distanceToSqr(nearestPoint(box, a)) < b.distanceToSqr(nearestPoint(box, b))) high = second;
+            else low = first;
+        }
+        return nearestPoint(box, eye.add(direction.scale((low + high) * 0.5)));
     }
 
     public static Vec3 aimPoint(AABB box, Vec3 eye, double targetY, boolean closest,
@@ -123,12 +204,16 @@ public final class AimAssist extends Module {
         double x = closest ? Math.clamp(eye.x, box.minX, box.maxX) : (box.minX + box.maxX) * 0.5;
         double y = closest ? Math.clamp(eye.y, box.minY, box.maxY) : targetY;
         double z = closest ? Math.clamp(eye.z, box.minZ, box.maxZ) : (box.minZ + box.maxZ) * 0.5;
+        return offsetPoint(box, new Vec3(x, y, z), horizontalOffset, verticalOffset, yaw);
+    }
+
+    private static Vec3 offsetPoint(AABB box, Vec3 point, double horizontalOffset, double verticalOffset, float yaw) {
         double radians = Math.toRadians(yaw);
          
         return new Vec3(
-            Math.clamp(x - Math.cos(radians) * horizontalOffset / 100 * (box.maxX - box.minX) * 0.5, box.minX, box.maxX),
-            Math.clamp(y + verticalOffset / 100 * (box.maxY - box.minY) * 0.5, box.minY, box.maxY),
-            Math.clamp(z - Math.sin(radians) * horizontalOffset / 100 * (box.maxZ - box.minZ) * 0.5, box.minZ, box.maxZ));
+            Math.clamp(point.x - Math.cos(radians) * horizontalOffset / 100 * (box.maxX - box.minX) * 0.5, box.minX, box.maxX),
+            Math.clamp(point.y + verticalOffset / 100 * (box.maxY - box.minY) * 0.5, box.minY, box.maxY),
+            Math.clamp(point.z - Math.sin(radians) * horizontalOffset / 100 * (box.maxZ - box.minZ) * 0.5, box.minZ, box.maxZ));
     }
 
     private double angularDistance(LivingEntity candidate, float partialTick) {

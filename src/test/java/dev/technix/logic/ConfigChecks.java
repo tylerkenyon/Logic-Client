@@ -117,13 +117,6 @@ public final class ConfigChecks {
             config.save();
             require(!JsonParser.parseString(Files.readString(file)).getAsJsonObject().getAsJsonObject("modules").getAsJsonObject("Self Destruct").get("enabled").getAsBoolean(), "Never persist an armed one-shot unload action");
             unload.setEnabled(false);
-            JsonObject legacy = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
-            JsonObject oldAnchor = legacy.getAsJsonObject("modules").getAsJsonObject("Anchor Macro").getAsJsonObject("settings");
-            oldAnchor.add("Action interval", oldAnchor.remove("Placement delay"));
-            oldAnchor.addProperty("Placement inventory", "Held item");
-            oldAnchor.remove("Charge delay");
-            oldAnchor.remove("Detonation delay");
-            Files.writeString(file, legacy.toString());
             for (var setting : sprintReset.settings()) {
                 if (setting instanceof NumberSetting number) number.set(number.min());
                 else if (setting instanceof BooleanSetting flag) flag.set(false);
@@ -183,9 +176,6 @@ public final class ConfigChecks {
                 && ((RangeSetting) anchorSettings.get("Placement delay")).low() == 40
                 && ((RangeSetting) anchorSettings.get("Placement delay")).high() == 80,
                 "Round-trip macro action bindings, switching modes, timing and hidden stage settings");
-            require(((RangeSetting) anchorSettings.get("Charge delay")).low() == 40
-                && ((RangeSetting) anchorSettings.get("Detonation delay")).high() == 80,
-                "Migrate the legacy action interval into the separate use delays");
             require(lagSettings.get("Packet delay").get().equals(240.0)
                 && lagSettings.get("Range").get().equals(7.5)
                 && lagSettings.get("Marker colour").get().equals("Amber")
@@ -216,17 +206,13 @@ public final class ConfigChecks {
             require(renderer.saveLayout().getAsJsonObject("COMBAT").get("x").getAsInt() == 24 && !renderer.saveLayout().getAsJsonObject("COMBAT").get("expanded").getAsBoolean(), "Round-trip dragged panel positions and collapse state");
             String saved = Files.readString(file);
             JsonObject root = JsonParser.parseString(saved).getAsJsonObject();
-            root.getAsJsonObject("modules").getAsJsonObject("Example").add("settingKeys", JsonParser.parseString("{\"Visible\":65,\"Mode\":66}"));
             root.getAsJsonObject("modules").getAsJsonObject("Self Destruct").addProperty("enabled", true);
-            root.addProperty("version", 1);
             root.getAsJsonObject("theme").addProperty("radius-sm", 6);
             root.getAsJsonObject("theme").addProperty("radius-md", 10);
             root.getAsJsonObject("theme").addProperty("radius-lg", 16);
             Files.writeString(file, root.toString());
             new ConfigStore(file, modules, renderer, theme).load();
-            require(!JsonParser.parseString(Files.readString(file)).getAsJsonObject().getAsJsonObject("modules")
-                .getAsJsonObject("Example").has("settingKeys"), "Remove obsolete per-setting bindings from existing profiles");
-            require(theme.radiusMd == 6 && JsonParser.parseString(Files.readString(file)).getAsJsonObject().get("version").getAsInt() == 2, "Upgrade existing profiles to less rounded defaults");
+            require(theme.radiusSm == 6 && theme.radiusMd == 10 && theme.radiusLg == 16, "Preserve configured corner radii");
             require(!unload.enabled(), "Never execute Self Destruct while loading a profile");
             JsonObject settings = root.getAsJsonObject("modules").getAsJsonObject("Example").getAsJsonObject("settings");
             settings.addProperty("Size", 1000); settings.addProperty("Mode", "invalid"); settings.addProperty("Visible", "false");
@@ -244,6 +230,7 @@ public final class ConfigChecks {
             try (var entries = Files.list(directory)) { require(entries.anyMatch(p -> p.getFileName().toString().startsWith("config-invalid-")), "Preserve malformed configs before replacing them"); }
             require(JsonParser.parseString(Files.readString(file)).isJsonObject(), "Recover to a valid profile");
             require(!Files.exists(directory.resolve("config.json.tmp")), "Leave no temporary file after an atomic write");
+            ProfileChecks.run();
             System.out.println("Configuration checks passed.");
         } finally {
             try (var entries = Files.list(directory)) { for (Path path : entries.toList()) Files.deleteIfExists(path); }

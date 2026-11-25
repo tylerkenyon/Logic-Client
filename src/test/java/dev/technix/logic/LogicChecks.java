@@ -122,10 +122,15 @@ public final class LogicChecks {
         require(toggleSneak.isDown(), "Repeated Eagle updates must not flip toggle-to-sneak off");
         MovementKeys.setState(toggleSneak, false, true);
         require(!toggleSneak.isDown(), "Release toggle-to-sneak without leaving a stuck input");
-        var migratedTiming = new RangeSetting("Timing", "", 2, 2, 0, 20, 1);
-        dev.technix.logic.client.config.ConfigStore.readSetting(migratedTiming, new com.google.gson.JsonPrimitive(7));
-        require(migratedTiming.low() == 7 && migratedTiming.high() == 7 && migratedTiming.randomInt() == 7,
-            "Migrate a fixed timing to equal range endpoints");
+        var storedTiming = new RangeSetting("Timing", "", 2, 2, 0, 20, 1);
+        boolean scalarTimingRejected = false;
+        try { dev.technix.logic.client.config.ConfigStore.readSetting(storedTiming, new com.google.gson.JsonPrimitive(7)); }
+        catch (IllegalArgumentException expected) { scalarTimingRejected = true; }
+        require(scalarTimingRejected && storedTiming.low() == 2 && storedTiming.high() == 2,
+            "Reject legacy scalar timings without changing range endpoints");
+        dev.technix.logic.client.config.ConfigStore.readSetting(storedTiming,
+            com.google.gson.JsonParser.parseString("{\"low\":7,\"high\":7}"));
+        require(storedTiming.randomInt() == 7, "Restore fixed timing through explicit range endpoints");
         var trigger = new dev.technix.logic.client.module.impl.Triggerbot();
         require(trigger.settings().stream().anyMatch(setting -> setting.name().equals("Reaction time (ms)") && setting instanceof RangeSetting),
             "Triggerbot exposes a reaction time range");
@@ -333,7 +338,34 @@ public final class LogicChecks {
         Vec3 inside = new Vec3(0, 1, 5);
         require(AimAssist.aimPoint(hitbox, inside, 1.4, true, 0, 0, 0).equals(inside),
             "An eye inside the hitbox needs no closest-point turn");
+        Vec3 firstViewPoint = AimAssist.closestAimPoint(hitbox, eye, new Vec3(-3, -0.5, 4));
+        Vec3 secondViewPoint = AimAssist.closestAimPoint(hitbox, eye, new Vec3(-2.5, -1, 4));
+        close(firstViewPoint.x, 0, "Closest follows the first view ray horizontally");
+        close(firstViewPoint.y, 1, "Closest follows the first view ray vertically");
+        close(secondViewPoint.x, 0.5, "Closest moves horizontally with manual aim");
+        close(secondViewPoint.y, 0.5, "Closest moves vertically with manual aim");
+        close(secondViewPoint.z, 4, "Closest stays on the hitbox entry face");
+        require(AimAssist.closestAimPoint(hitbox, inside, new Vec3(0, 0, 1)).equals(inside),
+            "Closest does not turn when the eye is inside the target");
+        Vec3 outsideEye = new Vec3(0, 1, -3);
+        Vec3 lowerEdge = AimAssist.closestAimPoint(hitbox, outsideEye, new Vec3(1, 0, 1));
+        Vec3 higherEdge = AimAssist.closestAimPoint(hitbox, outsideEye, new Vec3(1, 0.1, 1));
+        close(lowerEdge.x, 1, "A missing view ray chooses the nearest box edge");
+        close(lowerEdge.z, 4, "A missing view ray chooses the front edge");
+        require(higherEdge.y > lowerEdge.y && higherEdge.y <= hitbox.maxY,
+            "Closest updates its edge point when vertical aim changes outside the hitbox");
+        Vec3 optimal = AimAssist.optimalAimPoint(hitbox, eye);
+        close(optimal.x, 0.88, "Optimal keeps the reference cube inside the nearest side");
+        close(optimal.y, 1.5, "Optimal preserves eye height within the inset");
+        close(optimal.z, 4.12, "Optimal shifts the reference cube off the front face");
+        Vec3 tinyOptimal = AimAssist.optimalAimPoint(new AABB(0, 0, 0, 0.05, 0.05, 0.05), eye);
+        close(tinyOptimal.x, 0.025, "Optimal fits narrow hitboxes horizontally");
+        close(tinyOptimal.y, 0.025, "Optimal fits short hitboxes vertically");
+        close(tinyOptimal.z, 0.025, "Optimal fits narrow hitboxes in depth");
         var aim = new AimAssist();
+        require(aim.settings().stream().anyMatch(setting -> setting instanceof ModeSetting aimMode
+                && aimMode.name().equals("Target bone") && aimMode.options().contains("Optimal")),
+            "Expose Optimal through the existing target-point selector");
         require(aim.settings().stream().filter(s -> s instanceof NumberSetting &&
             (s.name().endsWith("smoothing") || s.name().endsWith("midpoint"))).count() == 4,
             "Register both axes of smoothing and midpoints for sliders and persistence");

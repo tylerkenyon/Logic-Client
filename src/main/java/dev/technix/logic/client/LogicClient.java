@@ -98,6 +98,7 @@ public final class LogicClient implements ClientModInitializer {
     private final KeyPearl keyPearl = new KeyPearl();
     private final TimerModule timer = new TimerModule();
     private ConfigStore config;
+    private dev.technix.logic.client.config.ProfileManager profiles;
 
     @Override
     public void onInitializeClient() {
@@ -151,6 +152,11 @@ public final class LogicClient implements ClientModInitializer {
             : new ConfigStore(configFile, MODULES, clickGuiRenderer, THEME);
         if (injected) config.setDiagnostics(dev.technix.logic.inject.NativeBridge::log);
         config.load();
+        profiles = new dev.technix.logic.client.config.ProfileManager(config, () -> {
+            guiConfig.updateMovement(false);
+            triggerbotClick = false;
+        });
+        clickGuiRenderer.setProfiles(profiles);
         if (injected) dev.technix.logic.inject.NativeBridge.log("configuration: file=" + configFile
             + ", exists=" + (configFile != null && java.nio.file.Files.exists(configFile))
             + ", captureProtection=" + interfaceModule.screenshareProtection.get());
@@ -168,6 +174,7 @@ public final class LogicClient implements ClientModInitializer {
     public static void startTick() {
         LogicClient client = instance;
         if (client == null || !client.running || client.shutdownRequested) return;
+        client.profiles.processPending();
         client.hitSelect.startTick();
         client.anchorMacro.startTick();
         client.keyPearl.startTick();
@@ -408,6 +415,7 @@ public final class LogicClient implements ClientModInitializer {
         catch (Throwable failure) { Logic.LOGGER.warn("Native unload failed; client hooks remain disabled", failure); }
         MODULES.clear();
         config = null;
+        profiles = null;
         instance = null;
         Logic.LOGGER.info("Logic unloaded for this session");
     }

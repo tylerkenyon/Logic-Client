@@ -13,6 +13,7 @@ public final class RangeSetting extends Setting<RangeSetting.Value> {
         this.min = min; this.max = max; this.step = step;
         set(new Value(low, high));
     }
+    public double step() { return step; }
     public double min() { return min; }
     public double max() { return max; }
     public double low() { return get().low(); }

@@ -94,6 +94,11 @@ public final class ClickGui extends Module {
         return true;
     }
     public int textCursor() { return textCursor; }
+    public void cancelInteractions() {
+        bindingTarget = null;
+        editText(null);
+    }
+
     public void editText(StringSetting setting) {
         //? if >=26.3 {
         /*if (mc() != null && (editingText == null) != (setting == null))
