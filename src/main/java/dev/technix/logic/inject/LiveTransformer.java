@@ -236,7 +236,7 @@ public final class LiveTransformer implements Opcodes {
             if (insn instanceof FieldInsnNode key && key.getOpcode() == GETFIELD
                     && key.owner.equals("net/minecraft/client/Options") && key.name.equals("keyAttack")) {
                 if (++attackReads == 2) {
-                    // Lunar wraps consumeClick in a boolean-returning mixin operation.
+
                     int remaining = 24;
                     for (AbstractInsnNode next = key.getNext(); next != null && remaining-- > 0; next = next.getNext()) {
                         if (next instanceof MethodInsnNode method && method.desc.endsWith(")Z")) {

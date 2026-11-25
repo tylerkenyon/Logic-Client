@@ -106,7 +106,7 @@ public final class Eagle extends Module {
             if (align) safelyClear &= !EdgePrediction.reachesEdge(speed, selectedLead + 50,
                 d -> supported(releaseFeet.move(aligned[0] * d, 0, aligned[1] * d)));
         }
-        // Existing momentum can carry the player over an edge while turning or releasing movement.
+
         if (horizontalSpeed >= 0.001) {
             edge |= EdgePrediction.reachesEdge(feet, velocity.x, velocity.z, selectedLead, this::supported);
             safelyClear &= !EdgePrediction.reachesEdge(releaseFeet, velocity.x, velocity.z, selectedLead + 50, this::supported);

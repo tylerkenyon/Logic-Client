@@ -6,8 +6,6 @@ import dev.technix.logic.client.combat.CombatTargets;
 import dev.technix.logic.client.module.Category;
 import dev.technix.logic.client.module.Module;
 import dev.technix.logic.client.setting.*;
-import dev.technix.logic.event.Subscribe;
-import dev.technix.logic.event.impl.ClientTickEvent;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
@@ -27,14 +25,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 
  
 public final class AnchorMacro extends Module {
     private final BooleanSetting ownOnly = registerSetting(new BooleanSetting("Placed by you",
         "Charge and detonate only anchors whose placement you sent during this session.", false));
-    private final RangeSetting interval = registerSetting(new RangeSetting("Action interval",
-        "Random waiting time between interaction attempts, in milliseconds.", 30, 50, 0, 200, 1));
     private final BooleanSetting place = registerSetting(new BooleanSetting("Place anchors",
         "Place one anchor per press of the placement key at your crosshair.", true));
     private final KeybindSetting placeKey = registerSetting(new KeybindSetting("Placement key",
@@ -53,6 +48,13 @@ public final class AnchorMacro extends Module {
     private final NumberSetting detonateSlot = registerSetting(new NumberSetting("Detonation slot",
         "Hotbar slot used to interact with charged anchors, numbered 1 to 9.", 1, 1, 9, 1));
     private final BooleanSetting detonateReturn = registerSetting(returnSetting("Restore after detonation"));
+    private final RangeSetting placeSwapDelay = registerSetting(delay("Placement swap delay"));
+    private final RangeSetting placeDelay = registerSetting(delay("Placement delay"));
+    private final RangeSetting chargeSwapDelay = registerSetting(delay("Charging swap delay"));
+    private final RangeSetting chargeDelay = registerSetting(delay("Charge delay"));
+    private final RangeSetting detonateSwapDelay = registerSetting(delay("Detonation swap delay"));
+    private final RangeSetting detonateDelay = registerSetting(delay("Detonation delay"));
+    private final RangeSetting restoreDelay = registerSetting(delay("Restore delay"));
     private final Map<BlockPos, Long> ownAnchors = new HashMap<>();
     private final Set<BlockPos> keyAnchors = new HashSet<>();
     private LocalPlayer player;
@@ -61,11 +63,16 @@ public final class AnchorMacro extends Module {
     private boolean placedThisPress, acting;
     private long nextAction;
     private Pending pending;
-    private int restoreSlot = -1, managedSlot = -1, actedTick = Integer.MIN_VALUE;
+    private int restoreSlot = -1, managedSlot = -1, actedTick = Integer.MIN_VALUE, scheduledTick;
+    private Action queued;
+    private Phase phase;
+    private boolean serverConfirmed;
+    private BlockPos clickedBlock, failedBlock;
 
     public enum Stage { PLACE, CHARGE, DETONATE }
+    private enum Phase { SWAP, USE, CONFIRM, RESTORE }
     private record Action(Stage stage, int slot, InteractionHand hand, String mode, boolean restore, BlockPos position) {}
-    private record Pending(Action action, int previousCharge, long deadline) {}
+    private record Pending(Action action, int previousCharge, long sentAt, long deadline) {}
 
     public AnchorMacro() {
         super("Anchor Macro", "Place, charge and activate anchors at your crosshair.", Category.COMBAT);
@@ -78,15 +85,26 @@ public final class AnchorMacro extends Module {
         detonateMode.visibleWhen(detonate::get);
         detonateSlot.visibleWhen(detonate::get);
         detonateReturn.visibleWhen(() -> detonate.get() && detonateMode.get().equals("Select slot"));
+        placeSwapDelay.visibleWhen(place::get);
+        placeDelay.visibleWhen(place::get);
+        chargeSwapDelay.visibleWhen(charge::get);
+        chargeDelay.visibleWhen(charge::get);
+        detonateSwapDelay.visibleWhen(detonate::get);
+        detonateDelay.visibleWhen(detonate::get);
+    }
+
+    private static RangeSetting delay(String name) {
+        return new RangeSetting(name, "Minimum and maximum wait in milliseconds. Each action uses a separate client tick.",
+            0, 25, 0, 1000, 1);
     }
 
     private static ModeSetting switchMode(String name) {
-        return new ModeSetting(name, "Held item keeps your slot; Select slot changes it; Temporary restores it immediately after use.",
-            "Temporary", "Held item", "Select slot", "Temporary");
+        return new ModeSetting(name, "Automatically select the needed item. Temporary restores after the complete anchor sequence.",
+            "Temporary", "Select slot", "Temporary");
     }
 
     private static BooleanSetting returnSetting(String name) {
-        return new BooleanSetting(name, "Return to the original slot at the next action interval unless you select another slot.", true);
+        return new BooleanSetting(name, "Return after the restore delay unless you select another slot.", true);
     }
 
     private boolean sameSession() {
@@ -95,14 +113,21 @@ public final class AnchorMacro extends Module {
     }
 
     public boolean busy() {
-        return enabled() && sameSession() && (acting || restoreSlot >= 0 || actedTick == player.tickCount);
+        return enabled() && sameSession() && (acting || phase != null || actedTick == player.tickCount);
     }
 
     public boolean blocksVanillaUse() {
-        if (!enabled() || !sameSession() || !CombatTargets.canAct(mc()) || !(mc().hitResult instanceof BlockHitResult hit)
-                || hit.getType() != HitResult.Type.BLOCK || LogicClient.MODULES.get(Blink.class).enabled()) return false;
-        return (pending != null && System.nanoTime() < pending.deadline()
-            && pending.action().position().equals(hit.getBlockPos())) || action(hit) != null;
+        if (!enabled() || !sameSession() || !CombatTargets.canAct(mc())
+                || LogicClient.MODULES.get(Blink.class).enabled()) return false;
+        if (busy()) return true;
+        BlockHitResult hit = currentHit();
+        return hit != null && (hit.getBlockPos().equals(failedBlock) || action(hit) != null);
+    }
+
+    public void startTick() {
+        if (!enabled()) return;
+        if (!sameSession()) { clear(); return; }
+        if (!CombatTargets.canAct(mc())) cancel();
     }
 
     public static Stage nextStage(boolean anchor, int charges, boolean placement, boolean charging, boolean detonation) {
@@ -130,7 +155,7 @@ public final class AnchorMacro extends Module {
         int slot = player.getInventory().getSelectedSlot();
         InteractionHand hand = InteractionHand.MAIN_HAND;
         if (stage == Stage.DETONATE) {
-            if (!mode.equals("Held item")) slot = detonateSlot.get().intValue() - 1;
+            slot = detonateSlot.get().intValue() - 1;
             if (!canDetonate(charges, player.getInventory().getItem(slot).is(Items.GLOWSTONE),
                     player.getOffhandItem().is(Items.GLOWSTONE))) return null;
         } else {
@@ -138,7 +163,6 @@ public final class AnchorMacro extends Module {
             if (!player.getMainHandItem().is(item)) {
                 if (player.getOffhandItem().is(item)) hand = InteractionHand.OFF_HAND;
                 else {
-                    if (mode.equals("Held item")) return null;
                     slot = findItem(item);
                     if (slot < 0) return null;
                 }
@@ -150,8 +174,9 @@ public final class AnchorMacro extends Module {
         return new Action(stage, slot, hand, mode, returnAfter, result);
     }
 
-    @Subscribe(priority = 200)
-    private void tick(ClientTickEvent event) {
+
+    public void beforeKeybinds() {
+        if (!enabled()) return;
         if (!sameSession()) {
             clear();
             player = mc().player;
@@ -160,32 +185,128 @@ public final class AnchorMacro extends Module {
         }
         if (player == null || level == null || connection == null) return;
         if (!placeKey.isDown()) placedThisPress = false;
-        if (!CombatTargets.canAct(mc()) || LogicClient.shieldBreakerBusy() || LogicClient.MODULES.get(Blink.class).enabled()) {
-            restore();
-            acting = false;
+        if (LogicClient.keyPearlBusy()) {
+            cancel();
+            if (phase == Phase.RESTORE && delayElapsed(System.nanoTime(), player.tickCount, nextAction, scheduledTick)) {
+                restore();
+                forgetAction();
+            }
+            return;
+        }
+        if (!CombatTargets.canAct(mc()) || player.isHandsBusy() || mc().gameMode.isDestroying()
+                || mc().options.keyAttack.isDown()
+                || LogicClient.shieldBreakerBusy() || LogicClient.MODULES.get(Blink.class).enabled()) {
+            cancel();
             return;
         }
         long now = System.nanoTime();
         ownAnchors.entrySet().removeIf(entry -> now - entry.getValue() > 1_000_000_000L && !level.getBlockState(entry.getKey()).is(Blocks.RESPAWN_ANCHOR));
         keyAnchors.retainAll(ownAnchors.keySet());
-        if (now < nextAction) return;
-        nextAction = now + (long)(ThreadLocalRandom.current().nextDouble(interval.low(), Math.nextUp(interval.high())) * 1_000_000);
-        restore();
-        if (pending != null) {
-            if (now < pending.deadline()) return;
-             
-            if (pending.action().stage() == Stage.PLACE) {
-                ownAnchors.remove(pending.action().position());
-                keyAnchors.remove(pending.action().position());
-                placedThisPress = false;
-            }
-            pending = null;
+        if (phase != null && player.getInventory().getSelectedSlot() != managedSlot) {
+
+            forgetAction();
+            return;
         }
+        if (phase != null && !delayElapsed(now, player.tickCount, nextAction, scheduledTick)) return;
+        if (phase == Phase.RESTORE) {
+            restore();
+            forgetAction();
+            return;
+        }
+        if (phase == Phase.CONFIRM) {
+            if (!serverConfirmed && now < pending.deadline()) return;
+            if (!serverConfirmed) failedBlock = clickedBlock;
+            if (serverConfirmed && queued.stage() != Stage.DETONATE) {
+                BlockHitResult nextHit = currentHit();
+                Action next = nextHit == null ? null : action(nextHit);
+                if (next != null && next.stage() != Stage.PLACE
+                        && next.position().equals(queued.position())) {
+                    long sentAt = pending.sentAt();
+                    prepare(nextHit, next, sentAt, actedTick);
+                    if (!delayElapsed(now, player.tickCount, nextAction, scheduledTick)) return;
+                } else {
+                    finishAction();
+                    return;
+                }
+            } else {
+                finishAction();
+                return;
+            }
+        }
+        BlockHitResult hit = currentHit();
+        if (failedBlock != null) {
+            if (hit != null && hit.getBlockPos().equals(failedBlock)) return;
+            failedBlock = null;
+        }
+        Action action = hit == null ? null : action(hit);
+        if (queued != null && !queued.equals(action)) { cancel(); return; }
+        if (action == null) return;
+        try {
+            if (phase == null) {
+                LogicClient.MODULES.get(AutoTool.class).yieldForInteraction();
+                action = action(hit);
+                if (action == null) return;
+                restoreSlot = managedSlot = player.getInventory().getSelectedSlot();
+                prepare(hit, action, now, player.tickCount);
+            } else if (phase == Phase.SWAP) {
+                LogicClient.MODULES.get(LagRange.class).suspend();
+                selectSlot(action.slot());
+                managedSlot = action.slot();
+                actedTick = player.tickCount;
+                phase = Phase.USE;
+                schedule(useDelay(action.stage()));
+            } else if (phase == Phase.USE) {
+                interact(hit, action);
+            }
+        } catch (ReflectiveOperationException | RuntimeException failure) {
+            Logic.LOGGER.warn("Anchor Macro could not complete its interaction", failure);
+            setEnabled(false);
+        }
+    }
+
+    private void prepare(BlockHitResult hit, Action action, long start, int tick) {
+        queued = action;
+        clickedBlock = hit.getBlockPos().immutable();
+        pending = null;
+        serverConfirmed = false;
+        boolean swap = action.hand() == InteractionHand.MAIN_HAND && action.slot() != managedSlot;
+        phase = swap ? Phase.SWAP : Phase.USE;
+        RangeSetting delay = swap ? swapDelay(action.stage()) : useDelay(action.stage());
+        nextAction = start + (long) (delay.random() * 1_000_000);
+        scheduledTick = tick;
+    }
+
+    private BlockHitResult currentHit() {
         if (!(mc().hitResult instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK
-                || player.getEyePosition().distanceToSqr(hit.getLocation()) > Math.pow(player.blockInteractionRange(), 2)
-                || !level.getWorldBorder().isWithinBounds(hit.getBlockPos())) return;
-        Action action = action(hit);
-        if (action != null) interact(hit, action);
+                || !(player.pick(player.blockInteractionRange(), 1, false) instanceof BlockHitResult ray)
+                || ray.getType() != HitResult.Type.BLOCK || !ray.getBlockPos().equals(hit.getBlockPos())
+                || ray.getDirection() != hit.getDirection()) return null;
+        return ray;
+    }
+
+    public static boolean delayElapsed(long now, int tick, long deadline, int previousTick) {
+        return now >= deadline && tick != previousTick;
+    }
+
+    private void schedule(RangeSetting delay) {
+        nextAction = System.nanoTime() + (long) (delay.random() * 1_000_000);
+        scheduledTick = player.tickCount;
+    }
+
+    private RangeSetting swapDelay(Stage stage) {
+        return switch (stage) {
+            case PLACE -> placeSwapDelay;
+            case CHARGE -> chargeSwapDelay;
+            case DETONATE -> detonateSwapDelay;
+        };
+    }
+
+    private RangeSetting useDelay(Stage stage) {
+        return switch (stage) {
+            case PLACE -> placeDelay;
+            case CHARGE -> chargeDelay;
+            case DETONATE -> detonateDelay;
+        };
     }
 
     private int findItem(Item item) {
@@ -196,54 +317,60 @@ public final class AnchorMacro extends Module {
     }
 
     private void interact(BlockHitResult hit, Action action) {
-        LogicClient.MODULES.get(AutoTool.class).yieldForInteraction();
-         
-        action = action(hit);
-        if (action == null) return;
-         
         LogicClient.MODULES.get(LagRange.class).suspend();
-        int original = player.getInventory().getSelectedSlot();
         acting = true;
-        boolean failed = false;
         try {
-            if (action.hand() == InteractionHand.MAIN_HAND && !action.mode().equals("Held item")) selectSlot(action.slot());
             var before = level.getBlockState(hit.getBlockPos());
             var result = mc().gameMode.useItemOn(player, action.hand(), hit);
             actedTick = player.tickCount;
-            if (result.consumesAction()) {
-                //? if <26.3 {
-                player.swing(action.hand());
-                //?} else {
-                /*player.swing(action.hand(), net.minecraft.world.item.component.SwingAnimation.DEFAULT, true);
-                *///?}
-                int previousCharge = before.is(Blocks.RESPAWN_ANCHOR) ? before.getValue(RespawnAnchorBlock.CHARGE) : 0;
-                pending = new Pending(action, previousCharge, System.nanoTime() + 1_000_000_000L);
-                if (action.stage() == Stage.PLACE) {
-                    placedThisPress = true;
-                    ownAnchors.put(action.position(), System.nanoTime());
-                    keyAnchors.add(action.position());
-                }
+            if (!result.consumesAction()) {
+                failedBlock = hit.getBlockPos().immutable();
+                finishAction();
+                return;
             }
-            if (action.hand() == InteractionHand.MAIN_HAND && action.mode().equals("Select slot")
-                    && action.restore() && original != action.slot()) {
-                restoreSlot = original;
-                managedSlot = action.slot();
+            //? if <26.3 {
+            player.swing(action.hand());
+            //?} else {
+            /*player.swing(action.hand(), net.minecraft.world.item.component.SwingAnimation.DEFAULT, true);
+            *///?}
+            int previousCharge = before.is(Blocks.RESPAWN_ANCHOR) ? before.getValue(RespawnAnchorBlock.CHARGE) : 0;
+            long sentAt = System.nanoTime();
+            pending = new Pending(action, previousCharge, sentAt, sentAt + 2_000_000_000L);
+            serverConfirmed = false;
+            phase = Phase.CONFIRM;
+            scheduledTick = player.tickCount;
+            if (action.stage() == Stage.PLACE) {
+                placedThisPress = true;
+                ownAnchors.put(action.position(), System.nanoTime());
+                keyAnchors.add(action.position());
             }
-        } catch (ReflectiveOperationException | RuntimeException failure) {
-            Logic.LOGGER.warn("Anchor Macro could not complete its block interaction", failure);
-            failed = true;
-        } finally {
-            if ((action.mode().equals("Temporary") || failed) && sameSession()
-                    && player.getInventory().getSelectedSlot() != original) {
-                try { selectSlot(original); }
-                catch (ReflectiveOperationException failure) {
-                    Logic.LOGGER.warn("Anchor Macro could not restore its temporary slot", failure);
-                    failed = true;
-                }
-            }
-            acting = false;
-            if (failed) setEnabled(false);
-        }
+        } finally { acting = false; }
+    }
+
+    private void finishAction() {
+        if (queued != null && (queued.mode().equals("Temporary")
+                || queued.mode().equals("Select slot") && queued.restore())
+                && restoreSlot != managedSlot) {
+            phase = Phase.RESTORE;
+            schedule(restoreDelay);
+        } else forgetAction();
+    }
+
+    private void cancel() {
+        if (phase == Phase.RESTORE) return;
+        if (phase != null && restoreSlot != managedSlot) {
+            phase = Phase.RESTORE;
+            schedule(restoreDelay);
+        } else forgetAction();
+    }
+
+    private void forgetAction() {
+        queued = null;
+        clickedBlock = null;
+        phase = null;
+        pending = null;
+        serverConfirmed = false;
+        restoreSlot = managedSlot = -1;
     }
 
     private void selectSlot(int slot) throws ReflectiveOperationException {
@@ -253,7 +380,11 @@ public final class AnchorMacro extends Module {
 
     private void restore() {
         if (restoreSlot >= 0 && sameSession() && player.getInventory().getSelectedSlot() == managedSlot && mc().gameMode != null) {
-            try { selectSlot(restoreSlot); }
+            try {
+                LogicClient.MODULES.get(LagRange.class).suspend();
+                selectSlot(restoreSlot);
+                actedTick = player.tickCount;
+            }
             catch (ReflectiveOperationException failure) { Logic.LOGGER.warn("Anchor Macro could not restore its hotbar slot", failure); }
         }
         restoreSlot = managedSlot = -1;
@@ -295,7 +426,7 @@ public final class AnchorMacro extends Module {
         if (pending != null && pending.action().position().equals(pos)) {
             boolean anchor = state.is(Blocks.RESPAWN_ANCHOR);
             int charges = anchor ? state.getValue(RespawnAnchorBlock.CHARGE) : 0;
-            if (confirmed(pending.action().stage(), pending.previousCharge(), anchor, charges)) pending = null;
+            if (confirmed(pending.action().stage(), pending.previousCharge(), anchor, charges)) serverConfirmed = true;
         }
         if (!state.is(Blocks.RESPAWN_ANCHOR)) {
             ownAnchors.remove(pos);
@@ -321,8 +452,14 @@ public final class AnchorMacro extends Module {
         placedThisPress = acting = false;
         actedTick = Integer.MIN_VALUE;
         nextAction = 0;
-        pending = null;
+        failedBlock = null;
+        forgetAction();
     }
 
-    @Override protected void onDisable() { restore(); clear(); }
+    @Override protected void onDisable() {
+
+        if (sameSession() && restoreSlot >= 0 && player.getInventory().getSelectedSlot() == managedSlot)
+            player.getInventory().setSelectedSlot(restoreSlot);
+        clear();
+    }
 }

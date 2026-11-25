@@ -9,6 +9,15 @@ The build compiles Mica, builds and tests Logic, packs the injectable payload an
 its dependencies, then compiles the Rust launcher and native DLL. Output is in
 `dist/`. The build stops on the first failure.
 
+The launcher directory needs only LogicLauncher.exe, logic_native.dll and its update
+metadata. Both versioned payload JARs and the shared Java runtime are embedded in
+the DLL at compile time. The Windows x64 build includes only its native libraries.
+Rebuilding a directory removes the known loose JAR copies from older builds.
+
+The Java loader extracts the embedded JARs under the user's Logic runtime cache
+when injecting. The payload is deleted on unload, and the shared runtime stays
+available for reuse.
+
 If a running game has the previous DLL loaded, use
 `build.bat -OutputDirectory dist-fixed` to build into a separate directory.
 Restart Minecraft before using the new launcher: a DLL that was already loaded
@@ -40,7 +49,9 @@ needed for the capture-excluded Mica overlay; exclusive fullscreen hides it.
 
 Install the versioned `logic` jar in the mods directory with Fabric API. Mica and its
 libraries are nested inside the mod jar: do not install a second Mica copy.
-Use the Logic JAR named for your Minecraft version.
+Use the Logic JAR named for your Minecraft version from
+versions/<game>/build/libs/. These mod JARs are built separately from the native
+distribution.
 The injectable payload jar is not the Fabric mod jar.
 
 ## Tests and logs

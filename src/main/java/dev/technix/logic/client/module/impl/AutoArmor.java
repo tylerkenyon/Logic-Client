@@ -46,7 +46,7 @@ public final class AutoArmor extends Module {
         if (owner != mc.player) { owner = mc.player; remaining = delay.randomInt(); }
         if (mc.player == null || mc.level == null || mc.gameMode == null || !mc.player.isAlive() || mc.player.isSpectator()
                 || mc.isPaused() || LogicClient.MODULES.get(ClickGui.class).open()
-                || LogicClient.anchorBusy() || LogicClient.shieldBreakerBusy()
+                || LogicClient.anchorBusy() || LogicClient.keyPearlBusy() || LogicClient.shieldBreakerBusy()
                 || mc.player.containerMenu != mc.player.inventoryMenu
                 || inventoryOnly.get() && !(mc.gui.screen() instanceof InventoryScreen)
                 || mc.gui.screen() != null && !(mc.gui.screen() instanceof InventoryScreen)

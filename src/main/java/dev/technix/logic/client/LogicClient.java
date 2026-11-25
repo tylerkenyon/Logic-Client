@@ -22,6 +22,7 @@ import dev.technix.logic.client.module.impl.AntiAction;
 import dev.technix.logic.client.module.impl.AutoShieldBreaker;
 import dev.technix.logic.client.module.impl.LagRange;
 import dev.technix.logic.client.module.impl.AnchorMacro;
+import dev.technix.logic.client.module.impl.KeyPearl;
 import dev.technix.logic.client.module.impl.TimerModule;
 import dev.technix.logic.client.module.impl.Backtrack;
 import dev.technix.logic.client.module.impl.FastPlace;
@@ -94,6 +95,7 @@ public final class LogicClient implements ClientModInitializer {
     private final HitSelect hitSelect = new HitSelect();
     private boolean triggerbotClick;
     private final AnchorMacro anchorMacro = new AnchorMacro();
+    private final KeyPearl keyPearl = new KeyPearl();
     private final TimerModule timer = new TimerModule();
     private ConfigStore config;
 
@@ -138,6 +140,7 @@ public final class LogicClient implements ClientModInitializer {
         MODULES.register(new AutoArmor());
         MODULES.register(new ChestStealer());
         MODULES.register(anchorMacro);
+        MODULES.register(keyPearl);
         MODULES.register(snapTap);
         MODULES.register(eagle);
         MODULES.register(interfaceModule);
@@ -166,6 +169,8 @@ public final class LogicClient implements ClientModInitializer {
         LogicClient client = instance;
         if (client == null || !client.running || client.shutdownRequested) return;
         client.hitSelect.startTick();
+        client.anchorMacro.startTick();
+        client.keyPearl.startTick();
         MODULES.get(JumpReset.class).startTick();
     }
 
@@ -175,12 +180,15 @@ public final class LogicClient implements ClientModInitializer {
 
     public static void beforeKeybinds() {
         if (!running()) return;
+        instance.anchorMacro.beforeKeybinds();
+        instance.keyPearl.beforeKeybinds();
         MODULES.get(Triggerbot.class).beginKeybinds();
         MODULES.get(AutoShieldBreaker.class).beforeKeybinds();
     }
 
     public static boolean attackClick(boolean manualClick) {
         if (!running()) return manualClick;
+        if (keyPearlBusy()) return false;
         var client = instance;
         client.triggerbotClick = false;
         var shieldBreaker = MODULES.get(AutoShieldBreaker.class);
@@ -193,7 +201,7 @@ public final class LogicClient implements ClientModInitializer {
         if (manualClick) {
             triggerbot.markClickSeen();
             if (!(mc.hitResult instanceof EntityHitResult hit)) return true;
-            // A denied click ends the vanilla loop. Discard any remaining presses for this entity.
+
             while (mc.options.keyAttack.consumeClick()) {}
             return !client.hitSelect.attackedThisTick() && client.hitSelect.allowManualAttack(hit.getEntity());
         }
@@ -261,6 +269,10 @@ public final class LogicClient implements ClientModInitializer {
         return client != null && client.running && client.anchorMacro.busy();
     }
 
+    public static boolean keyPearlBusy() {
+        return running() && instance.keyPearl.busy();
+    }
+
     public static boolean shieldBreakerBusy() {
         return running() && MODULES.get(AutoShieldBreaker.class).busy();
     }
@@ -279,11 +291,11 @@ public final class LogicClient implements ClientModInitializer {
     }
 
     public static boolean allowUse() {
-        return !anchorControlsUse() && !shieldBreakerBusy() && !MODULES.get(AntiAction.class).blocksUse() && MODULES.get(FastPlace.class).allowUse();
+        return !keyPearlBusy() && !anchorControlsUse() && !shieldBreakerBusy() && !MODULES.get(AntiAction.class).blocksUse() && MODULES.get(FastPlace.class).allowUse();
     }
 
     public static boolean blockAttack() {
-        return running() && MODULES.get(AntiAction.class).blocksAttack();
+        return running() && (anchorBusy() || keyPearlBusy() || MODULES.get(AntiAction.class).blocksAttack());
     }
 
     public static boolean interceptCommonPacket(Packet<?> packet, ClientCommonPacketListenerImpl listener) {

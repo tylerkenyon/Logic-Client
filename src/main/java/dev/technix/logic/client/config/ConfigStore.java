@@ -73,6 +73,18 @@ public final class ConfigStore {
                     JsonObject state = stored.getAsJsonObject(module.name());
                     if (state.has("settings") && state.get("settings").isJsonObject()) {
                         JsonObject settings = state.getAsJsonObject("settings");
+                        if (module instanceof dev.technix.logic.client.module.impl.AnchorMacro) {
+                            for (String name : java.util.List.of("Placement inventory", "Charging inventory", "Detonation inventory")) {
+                                if (settings.has(name) && settings.get(name).isJsonPrimitive()
+                                        && settings.get(name).getAsString().equals("Held item"))
+                                    settings.addProperty(name, "Temporary");
+                            }
+                        }
+                        if (module instanceof dev.technix.logic.client.module.impl.AnchorMacro && settings.has("Action interval")) {
+                            for (String name : java.util.List.of("Placement delay", "Charge delay", "Detonation delay")) {
+                                if (!settings.has(name)) settings.add(name, settings.get("Action interval"));
+                            }
+                        }
                         for (Setting<?> setting : module.settings()) {
                             if (!settings.has(setting.name())) continue;
                             if (module.name().equals("Interface") && setting.name().equals("Screenshare protection"))

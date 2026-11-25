@@ -81,9 +81,9 @@ public final class ClickGuiRenderer implements OverlayElement {
         leftClick = rightClick = modeClicked = false;
         boolean editingText = false;
         for (Module module : LogicClient.MODULES.all()) for (Setting<?> setting : module.settings()) {
-            if (setting instanceof StringSetting text && clickGui.isEditing(text)) {
+            if (clickGui.editingSetting() == setting) {
                 ModuleView view = modules.get(module);
-                editingText = clickGui.open() && text.visible() && view != null && view.expanded
+                editingText = clickGui.open() && setting.visible() && view != null && view.expanded
                     && panels.get(module.category()).expanded;
             }
         }
@@ -227,7 +227,7 @@ public final class ClickGuiRenderer implements OverlayElement {
         boolean hover = active && bodyHit(x + 6, y, WIDTH - 12, 36);
         view.hover = GuiMotion.smooth(view.hover, hover ? 1 : 0, 20, dt);
         rect(x + 6, y, WIDTH - 12, 36, LogicClient.THEME.radiusSm, "bg-elevated", view.hover * options.panelOpacity.get().floatValue() / 100);
-        boolean bindable = !module.configurationOnly() && !module.actionOnly();
+        boolean bindable = module.bindable();
         float labelRight = x + WIDTH - 65;
         if (bindable && view.expanded) {
             float bindRight = x + WIDTH - 49;
@@ -242,7 +242,7 @@ public final class ClickGuiRenderer implements OverlayElement {
         }
         rowLabel(module.name(), x + 14, y + 11, labelRight, 14,
             module.enabled() || module.configurationOnly() ? "text-primary" : "text-secondary");
-        if (module.actionOnly()) textRight("Unload", x + WIDTH - 15, y + 11, 13, "text-muted");
+        if (module.actionOnly() && !bindable) textRight("Unload", x + WIDTH - 15, y + 11, 13, "text-muted");
         else if (module.configurationOnly()) textRight(view.expanded ? "-" : "+", x + WIDTH - 15, y + 11, 14, "text-secondary");
         else drawSwitch(x + WIDTH - 41, y + 10, view.enabled);
         float top = Math.max(clipTop, y + 38), bottom = Math.min(clipBottom, y + 38 + settingsHeight(module) * view.expansion);
@@ -267,11 +267,32 @@ public final class ClickGuiRenderer implements OverlayElement {
     private void drawSetting(Setting<?> setting, float x, float y, boolean active) {
         if (y >= clipBottom || y + settingHeight(setting) <= clipTop) return;
         float left = x + 16, right = x + WIDTH - 16;
+        boolean numeric = setting instanceof NumberSetting || setting instanceof RangeSetting;
+        if (numeric && active && leftClick && bodyHit(left - 3, y + 2, right - left + 6, 54)) {
+            long window = Minecraft.getInstance().getWindow().handle();
+            if (GameInput.keyDown(window, GLFW.GLFW_KEY_LEFT_CONTROL)
+                    || GameInput.keyDown(window, GLFW.GLFW_KEY_RIGHT_CONTROL)) {
+                clickGui.editNumber(setting);
+                dragging = null;
+                leftClick = false;
+            }
+        }
         if (setting instanceof KeybindSetting bind) {
             float bindLeft = drawBind(bind, bind.get(), right - 84, right, y + 8, active);
             rowLabel(setting.name(), left, y + 11, bindLeft - 6, 13, "text-secondary");
+        } else if (numeric && clickGui.isEditingNumber(setting)) {
+            rowLabel(setting.name(), left, y + 11, right - 90, 13, "text-secondary");
         } else text(setting.name(), left, y + 11, 13, false, "text-secondary");
-        if (setting instanceof BooleanSetting bool) {
+        if (numeric && clickGui.isEditingNumber(setting)) {
+            String value = clickGui.numericText();
+            textRight(clickGui.invalidNumber() ? "Invalid value" : "Enter to save", right, y + 11, 12, "text-muted");
+            rect(left, y + 29, right - left, 27, LogicClient.THEME.radiusSm, "bg-elevated", 1);
+            if (clickGui.allTextSelected()) rect(left + 5, y + 32, Math.min(right - left - 10, textWidth(value, 13) + 6), 21, 2, "accent-subtle", 1);
+            else value = value.substring(0, clickGui.textCursor()) + "|" + value.substring(clickGui.textCursor());
+            draw.pushClipRect(px(left + 4), py(Math.max(clipTop, y + 29)), px(right - 4), py(Math.min(clipBottom, y + 56)), true);
+            try { text(value, left + 8, y + 36, 13, false, "text-primary"); }
+            finally { draw.popClipRect(); }
+        } else if (setting instanceof BooleanSetting bool) {
             if (active && leftClick && bodyHit(left, y + 2, right - left, 32)) { bool.toggle(); leftClick = false; }
             drawSwitch(right - 25, y + 10, animation.getOrDefault(bool, bool.get() ? 1f : 0f));
         } else if (setting instanceof NumberSetting number) {

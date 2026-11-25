@@ -20,6 +20,10 @@ public final class ProtectedOverlay implements AutoCloseable {
         int GetWindowLong(HWND window, int index);
         int SetWindowLong(HWND window, int index, int value);
         boolean SetLayeredWindowAttributes(HWND window, int colorKey, byte alpha, int flags);
+        boolean IsWindowVisible(HWND window);
+        boolean IsIconic(HWND window);
+        HWND GetWindow(HWND window, int command);
+        boolean SetWindowPos(HWND window, HWND insertAfter, int x, int y, int width, int height, int flags);
     }
 
     public interface VersionApi extends StdCallLibrary {
@@ -82,7 +86,7 @@ public final class ProtectedOverlay implements AutoCloseable {
                 throw new IllegalStateException("Cannot configure the overlay window: " + Native.getLastError());
             }
             //? if >=26.3 {
-            /*// Windows mouse passthrough requires both TRANSPARENT and LAYERED.
+            /*
             api.SetWindowLong(hwnd, -20, api.GetWindowLong(hwnd, -20) | 0x00080000);
             if (!api.SetLayeredWindowAttributes(hwnd, 0, (byte) 255, 2)) {
                 throw new IllegalStateException("Cannot configure overlay mouse passthrough: " + Native.getLastError());
@@ -119,11 +123,14 @@ public final class ProtectedOverlay implements AutoCloseable {
     }
 
     public void render(long host, boolean hostActive) {
-        if (!hostActive || !window.canShow(host)) {
+        HWND hostWindow = host == 0 ? null : new HWND(Pointer.createConstant(window.nativeHandle(host)));
+        if (!hostActive || hostWindow == null || !captureApi.IsWindowVisible(hostWindow)
+                || captureApi.IsIconic(hostWindow) || !window.canShow(host)) {
             if (shown) hide();
             return;
         }
         window.follow(host);
+        followStack(hostWindow);
         //? if >=26.3 {
         /*if (!shown && !captureApi.SetWindowDisplayAffinity(hwnd, 0x11)) {
             throw new IllegalStateException("Windows rejected overlay capture exclusion: " + Native.getLastError());
@@ -134,6 +141,28 @@ public final class ProtectedOverlay implements AutoCloseable {
             verifyCaptureProtection();
             window.show();
             shown = true;
+            followStack(hostWindow);
+        }
+    }
+
+    private void followStack(HWND host) {
+        boolean hostTopmost = (captureApi.GetWindowLong(host, -20) & 0x8) != 0;
+        boolean overlayTopmost = (captureApi.GetWindowLong(hwnd, -20) & 0x8) != 0;
+        int flags = 0x1 | 0x2 | 0x10 | 0x200;
+        if (hostTopmost != overlayTopmost
+                && !captureApi.SetWindowPos(hwnd, new HWND(Pointer.createConstant(hostTopmost ? -1L : -2L)),
+                    0, 0, 0, 0, flags)) {
+            hide();
+            throw new IllegalStateException("Cannot match Minecraft window stacking: " + Native.getLastError());
+        }
+        HWND previous = captureApi.GetWindow(host, 3);
+        if (hwnd.equals(previous)) return;
+        if (!hostTopmost && previous != null && (captureApi.GetWindowLong(previous, -20) & 0x8) != 0) {
+            previous = null;
+        }
+        if (!captureApi.SetWindowPos(hwnd, previous, 0, 0, 0, 0, flags)) {
+            hide();
+            throw new IllegalStateException("Cannot follow Minecraft window stacking: " + Native.getLastError());
         }
     }
 

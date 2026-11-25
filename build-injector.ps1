@@ -37,16 +37,17 @@ try {
     }
     & python -c "import sys; assert sys.version_info >= (3, 9), 'Python 3.9 or newer is required'"
     if ($LASTEXITCODE -ne 0) { throw 'Unsupported Python version' }
+    & python scripts/test-package-injection.py
+    if ($LASTEXITCODE -ne 0) { throw 'Payload packaging checks failed' }
     $gradleOptions = @()
     if ($Offline) { $gradleOptions += '--offline' }
     & ./gradlew.bat ':26.2:build' ':26.3:build' ':mica:26.2:build' ':mica:26.3:build' @gradleOptions
     if ($LASTEXITCODE -ne 0) { throw 'Logic build failed' }
     $version = ((Get-Content gradle.properties | Where-Object { $_ -match '^version=' }) -split '=',2)[1]
-    $mods = foreach ($gameVersion in @('26.2', '26.3')) {
+    foreach ($gameVersion in @('26.2', '26.3')) {
         $mod = "versions/$gameVersion/build/libs/logic-$gameVersion-$version.jar"
-        & python scripts/package-injection.py $mod "build/injection/$gameVersion/logic-payload.jar" --thin | Write-Host
+        & python scripts/package-injection.py $mod "build/injection/$gameVersion/logic-payload.jar" --thin --windows-x64 | Write-Host
         if ($LASTEXITCODE -ne 0) { throw "Payload packaging failed for $gameVersion" }
-        $mod
     }
     if ((Get-FileHash 'build/injection/26.2/logic-runtime.jar').Hash -ne (Get-FileHash 'build/injection/26.3/logic-runtime.jar').Hash) {
         throw 'The versioned payloads require different shared runtimes'
@@ -66,12 +67,18 @@ try {
     }
     New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
     Copy-Item -LiteralPath (Join-Path $NativeTargetDirectory 'release/LogicLauncher.exe'),(Join-Path $NativeTargetDirectory 'release/logic_native.dll') -Destination $OutputDirectory
-    Copy-Item -LiteralPath $mods -Destination $OutputDirectory
     Copy-Item -LiteralPath 'injector/README.md','injector/UPSTREAM.md' -Destination $OutputDirectory
+    # Remove only the known loose JARs produced by older versions of this build.
     foreach ($gameVersion in @('26.2', '26.3')) {
-        Copy-Item -LiteralPath "build/injection/$gameVersion/logic-payload.jar" -Destination (Join-Path $OutputDirectory "logic-payload-$gameVersion.jar")
+        foreach ($name in @("logic-$gameVersion-$version.jar", "logic-payload-$gameVersion.jar")) {
+            $oldJar = Join-Path $OutputDirectory $name
+            if (Test-Path -LiteralPath $oldJar -PathType Leaf) { Remove-Item -LiteralPath $oldJar }
+        }
     }
-    Copy-Item -LiteralPath 'build/injection/logic-runtime.jar' -Destination (Join-Path $OutputDirectory 'logic-runtime.jar')
+    foreach ($name in @('logic-runtime.jar', 'logic-payload.jar')) {
+        $oldJar = Join-Path $OutputDirectory $name
+        if (Test-Path -LiteralPath $oldJar -PathType Leaf) { Remove-Item -LiteralPath $oldJar }
+    }
     Copy-Item -LiteralPath 'docs/configuration.md' -Destination (Join-Path $OutputDirectory 'CONFIGURATION.md')
     $updateFiles = @{}
     foreach ($name in @('LogicLauncher.exe', 'logic_native.dll')) {
@@ -82,7 +89,7 @@ try {
     Get-ChildItem -LiteralPath $OutputDirectory -File | Where-Object { $_.Extension -in '.exe', '.dll', '.jar' } |
         ForEach-Object { $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256; "$($hash.Hash.ToLower())  $($_.Name)" } |
         Set-Content -LiteralPath (Join-Path $OutputDirectory 'SHA256SUMS.txt')
-    Write-Output "Built launcher, native loader and mod jars in $OutputDirectory."
+    Write-Output "Built launcher and DLL with embedded payloads in $OutputDirectory. Fabric mod JARs remain in versions/<game>/build/libs/."
 } finally {
     $env:LOGIC_PAYLOAD = $previousPayload
     $env:LOGIC_PAYLOAD_26_3 = $previousPayload263

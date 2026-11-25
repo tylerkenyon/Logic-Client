@@ -54,6 +54,7 @@ public final class ProtectedOverlayCheck {
                         overlay.drawFrame();
                         if (dev.technix.mica.internal.MinecraftAccess.hasOpenGlContext()) throw new AssertionError("Rendering leaked a GL context");
                     }
+                    assertWindowStacking(overlay);
                      
                     {
                         long handle = overlay.windowHandle();
@@ -105,6 +106,75 @@ public final class ProtectedOverlayCheck {
         }
         System.out.println("Protected overlay check passed: native exclusion verified, text rendered, protection loss blocked, contexts restored, windows cleaned up.");
     }
+    private static void assertWindowStacking(ProtectedOverlay overlay) {
+        //? if <26.3 {
+        glfwDefaultWindowHints();
+        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        long host = glfwCreateWindow(160, 120, "Mica visibility host", 0, 0);
+        long covering = glfwCreateWindow(80, 120, "Mica visibility cover", 0, 0);
+        //?} else {
+        /*long host = SDL_CreateWindow("Mica visibility host", 160, 120, SDL_WINDOW_HIDDEN);
+        long covering = SDL_CreateWindow("Mica visibility cover", 80, 120, SDL_WINDOW_HIDDEN);
+        *///?}
+        try {
+            if (host == 0 || covering == 0) throw new AssertionError("Cannot create visibility test windows");
+            //? if <26.3 {
+            long nativeHost = org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window(host);
+            long nativeCover = org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window(covering);
+            long nativeOverlay = org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window(overlay.windowHandle());
+            //?} else {
+            /*long nativeHost = SDL_GetPointerProperty(SDL_GetWindowProperties(host), SDL_PROP_WINDOW_WIN32_HWND_POINTER, 0);
+            long nativeCover = SDL_GetPointerProperty(SDL_GetWindowProperties(covering), SDL_PROP_WINDOW_WIN32_HWND_POINTER, 0);
+            long nativeOverlay = SDL_GetPointerProperty(SDL_GetWindowProperties(overlay.windowHandle()), SDL_PROP_WINDOW_WIN32_HWND_POINTER, 0);
+            *///?}
+            var hostWindow = new com.sun.jna.platform.win32.WinDef.HWND(com.sun.jna.Pointer.createConstant(nativeHost));
+            var coverWindow = new com.sun.jna.platform.win32.WinDef.HWND(com.sun.jna.Pointer.createConstant(nativeCover));
+            var overlayWindow = new com.sun.jna.platform.win32.WinDef.HWND(com.sun.jna.Pointer.createConstant(nativeOverlay));
+            var api = com.sun.jna.Native.load("user32", ProtectedOverlay.CaptureApi.class,
+                com.sun.jna.win32.W32APIOptions.DEFAULT_OPTIONS);
+            if (!api.SetWindowPos(hostWindow, null, 40, 40, 160, 120, 0x50)
+                    || !api.SetWindowPos(coverWindow, null, 40, 40, 80, 120, 0x50)) {
+                throw new AssertionError("Cannot position visibility test windows");
+            }
+            for (int frame = 0; frame < 3; frame++) {
+                overlay.render(host, true);
+                if (!api.IsWindowVisible(overlayWindow) || !overlayWindow.equals(api.GetWindow(hostWindow, 3)))
+                    throw new AssertionError("Overlay must sit directly above its visible host");
+                boolean coverAbove = false;
+                for (var above = api.GetWindow(overlayWindow, 3); above != null; above = api.GetWindow(above, 3)) {
+                    if (coverWindow.equals(above)) { coverAbove = true; break; }
+                }
+                if (!coverAbove) throw new AssertionError("Overlay appeared above the window covering its host");
+            }
+            if (!api.SetWindowPos(coverWindow, new com.sun.jna.platform.win32.WinDef.HWND(com.sun.jna.Pointer.createConstant(-1L)),
+                    40, 40, 80, 120, 0x10)) throw new AssertionError("Cannot make the covering window topmost");
+            overlay.render(host, true);
+            if ((api.GetWindowLong(overlayWindow, -20) & 0x8) != 0)
+                throw new AssertionError("Overlay became topmost underneath a topmost covering window");
+            com.sun.jna.platform.win32.User32.INSTANCE.ShowWindow(hostWindow, 7);
+            overlay.render(host, true);
+            if (api.IsWindowVisible(overlayWindow)) throw new AssertionError("Overlay remained visible for a minimized host");
+            com.sun.jna.platform.win32.User32.INSTANCE.ShowWindow(hostWindow, 4);
+            overlay.render(host, true);
+            if (!api.IsWindowVisible(overlayWindow)) throw new AssertionError("Overlay did not return with its restored host");
+            overlay.render(host, false);
+            if (api.IsWindowVisible(overlayWindow)) throw new AssertionError("Overlay remained visible for an inactive host");
+            com.sun.jna.platform.win32.User32.INSTANCE.ShowWindow(hostWindow, 0);
+            overlay.render(host, true);
+            if (api.IsWindowVisible(overlayWindow)) throw new AssertionError("Overlay remained visible for a hidden host");
+        } finally {
+            //? if <26.3 {
+            if (covering != 0) glfwDestroyWindow(covering);
+            if (host != 0) glfwDestroyWindow(host);
+            glfwDefaultWindowHints();
+            //?} else {
+            /*if (covering != 0) SDL_DestroyWindow(covering);
+            if (host != 0) SDL_DestroyWindow(host);
+            *///?}
+        }
+    }
+
     private static void assertTextPixels(ProtectedOverlay overlay) {
         try {
             var context = ProtectedOverlay.class.getDeclaredMethod("withContext", Runnable.class);

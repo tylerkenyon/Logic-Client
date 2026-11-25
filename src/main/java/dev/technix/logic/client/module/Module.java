@@ -25,6 +25,8 @@ public abstract class Module {
      
     public boolean configurationOnly() { return false; }
     public boolean actionOnly() { return false; }
+    public boolean bindable() { return !configurationOnly() && !actionOnly(); }
+    public void onKeybind() { toggle(); }
     private final String name;
     private final String description;
     private final Category category;

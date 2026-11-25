@@ -19,6 +19,7 @@ $payloadJar = Join-Path $fixtureRoot 'smoke.jar'
 if ($LASTEXITCODE -ne 0) { throw 'Payload packaging failed' }
 $previousPayload = $env:LOGIC_PAYLOAD
 $previousRuntime = $env:LOGIC_RUNTIME
+$embeddedInputs = @()
 try {
     $env:LOGIC_PAYLOAD = $payloadJar
     $env:LOGIC_RUNTIME = Join-Path $fixtureRoot 'smoke-runtime.jar'
@@ -26,6 +27,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Runtime packaging failed' }
     & cargo build --manifest-path (Join-Path $repoRoot 'injector/Cargo.toml') --release --target-dir (Join-Path $fixtureRoot 'rust')
     if ($LASTEXITCODE -ne 0) { throw 'Native smoke build failed' }
+    # Prove the loader uses the bytes embedded at build time.
+    foreach ($sourceJar in @($payloadJar, $env:LOGIC_RUNTIME)) {
+        $hiddenJar = $sourceJar + '.embedding-test'
+        Move-Item -LiteralPath $sourceJar -Destination $hiddenJar
+        $embeddedInputs += @{ Source = $sourceJar; Hidden = $hiddenJar }
+    }
     $javaPath = (Get-Command java).Source
     $fixtureProcess = Start-Process -FilePath $javaPath -ArgumentList @('-cp', ('"' + $hostClasses + '"'), 'FixtureHost') -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $fixtureRoot 'host.out') -RedirectStandardError (Join-Path $fixtureRoot 'host.err')
     try {
@@ -46,6 +53,9 @@ try {
         if (!$fixtureProcess.HasExited) { Stop-Process -Id $fixtureProcess.Id }
     }
 } finally {
+    foreach ($inputJar in $embeddedInputs) {
+        Move-Item -LiteralPath $inputJar.Hidden -Destination $inputJar.Source
+    }
     $env:LOGIC_PAYLOAD = $previousPayload
     $env:LOGIC_RUNTIME = $previousRuntime
 }

@@ -6,6 +6,8 @@ import dev.technix.logic.client.module.Module;
 import dev.technix.logic.client.setting.Setting;
 import dev.technix.logic.client.setting.StringSetting;
 import dev.technix.logic.client.setting.KeybindSetting;
+import dev.technix.logic.client.setting.NumberSetting;
+import dev.technix.logic.client.setting.RangeSetting;
 import dev.technix.mica.api.CaptureStatus;
 import dev.technix.mica.internal.ActiveRenderers;
 import net.minecraft.client.Minecraft;
@@ -23,6 +25,8 @@ public final class ClickGui extends Module {
     private int previousCursorMode;
     private Object bindingTarget;
     private StringSetting editingText;
+    private Setting<?> editingNumber;
+    private boolean selectAll, invalidNumber;
     private int textCursor;
 
     public ClickGui() {
@@ -43,7 +47,7 @@ public final class ClickGui extends Module {
             - (GameInput.keyDown(window, GLFW.GLFW_KEY_LEFT) ? 1 : 0);
         int vertical = (GameInput.keyDown(window, GLFW.GLFW_KEY_DOWN) ? 1 : 0)
             - (GameInput.keyDown(window, GLFW.GLFW_KEY_UP) ? 1 : 0);
-        // Entity.turn uses 0.15 degrees per unit. Clamp long frames to avoid jumps.
+
         double amount = 90.0 * Math.clamp(event.deltaSeconds(), 0.0, 0.05) / 0.15;
         if (horizontal != 0 || vertical != 0) mc.player.turn(horizontal * amount, vertical * amount);
     }
@@ -56,6 +60,33 @@ public final class ClickGui extends Module {
     }
 
     public boolean isEditing(StringSetting setting) { return editingText == setting; }
+    public boolean isEditingNumber(Setting<?> setting) { return editingNumber == setting; }
+    public Setting<?> editingSetting() { return editingNumber == null ? editingText : editingNumber; }
+    public String numericText() { return editingText == null ? "" : editingText.get(); }
+    public boolean invalidNumber() { return invalidNumber; }
+    public boolean allTextSelected() { return selectAll; }
+
+    public void editNumber(Setting<?> setting) {
+        String value;
+        if (setting instanceof NumberSetting number) value = number.valueLabel();
+        else if (setting instanceof RangeSetting range) value = range.low() + ", " + range.high();
+        else return;
+        editText(new StringSetting("", "", value));
+        editingNumber = setting;
+        selectAll = true;
+    }
+
+    public static void applyNumericValue(Setting<?> setting, String text) {
+        if (setting instanceof NumberSetting number) {
+            number.set(Double.parseDouble(text.strip()));
+        } else if (setting instanceof RangeSetting range) {
+            String[] values = text.strip().split("\\s*[,;]\\s*", -1);
+            if (values.length > 2) throw new IllegalArgumentException("Enter minimum, maximum");
+            double low = Double.parseDouble(values[0]);
+            double high = values.length == 1 ? low : Double.parseDouble(values[1]);
+            range.set(new RangeSetting.Value(low, high));
+        }
+    }
     public boolean bindMouse(int button, int action) {
         if (!(bindingTarget instanceof KeybindSetting bind) || !bind.visible() || action != GLFW.GLFW_PRESS) return false;
         bind.set(button);
@@ -69,6 +100,8 @@ public final class ClickGui extends Module {
             mc().textInputManager().onTextInputFocusChange(this, setting != null);
         *///?}
         editingText = setting;
+        editingNumber = null;
+        selectAll = invalidNumber = false;
         textCursor = setting == null ? 0 : setting.get().length();
         if (setting != null) bindingTarget = null;
     }
@@ -80,34 +113,57 @@ public final class ClickGui extends Module {
 
     private void insertText(String text) {
         String current = editingText.get();
-        String next = current.substring(0, textCursor) + text + current.substring(textCursor);
+        String next = selectAll ? text : current.substring(0, textCursor) + text + current.substring(textCursor);
         try {
             editingText.set(next);
-            textCursor += text.length();
+            textCursor = selectAll ? text.length() : textCursor + text.length();
+            selectAll = invalidNumber = false;
         } catch (IllegalArgumentException ignored) { }
     }
 
     public void handleKey(int key, int action) {
         if (action != GLFW.GLFW_PRESS && action != com.mojang.blaze3d.platform.InputConstants.REPEAT) return;
         if (bindingTarget instanceof Setting<?> setting && !setting.visible()) bindingTarget = null;
+        if (editingNumber != null && !editingNumber.visible()) editText(null);
         if (editingText != null && !editingText.visible()) editText(null);
         if (editingText != null && key != TOGGLE_KEY && key != key()) {
             String value = editingText.get();
             switch (key) {
-                case GLFW.GLFW_KEY_ESCAPE, GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> editText(null);
-                case GLFW.GLFW_KEY_LEFT -> textCursor = value.offsetByCodePoints(textCursor, textCursor > 0 ? -1 : 0);
-                case GLFW.GLFW_KEY_RIGHT -> textCursor = value.offsetByCodePoints(textCursor, textCursor < value.length() ? 1 : 0);
-                case GLFW.GLFW_KEY_HOME -> textCursor = 0;
-                case GLFW.GLFW_KEY_END -> textCursor = value.length();
+                case GLFW.GLFW_KEY_ESCAPE -> editText(null);
+                case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
+                    try {
+                        if (editingNumber != null) applyNumericValue(editingNumber, value);
+                        editText(null);
+                    } catch (IllegalArgumentException invalid) { invalidNumber = true; }
+                }
+                case GLFW.GLFW_KEY_A -> {
+                    long window = mc().getWindow().handle();
+                    if (GameInput.keyDown(window, GLFW.GLFW_KEY_LEFT_CONTROL)
+                            || GameInput.keyDown(window, GLFW.GLFW_KEY_RIGHT_CONTROL)) selectAll = true;
+                }
+                case GLFW.GLFW_KEY_LEFT -> {
+                    textCursor = selectAll ? 0 : value.offsetByCodePoints(textCursor, textCursor > 0 ? -1 : 0);
+                    selectAll = false;
+                }
+                case GLFW.GLFW_KEY_RIGHT -> {
+                    textCursor = selectAll ? value.length() : value.offsetByCodePoints(textCursor, textCursor < value.length() ? 1 : 0);
+                    selectAll = false;
+                }
+                case GLFW.GLFW_KEY_HOME -> { textCursor = 0; selectAll = false; }
+                case GLFW.GLFW_KEY_END -> { textCursor = value.length(); selectAll = false; }
                 case GLFW.GLFW_KEY_BACKSPACE -> {
-                    if (textCursor > 0) {
+                    if (selectAll) {
+                        editingText.set(""); textCursor = 0; selectAll = false;
+                    } else if (textCursor > 0) {
                         int previous = value.offsetByCodePoints(textCursor, -1);
                         editingText.set(value.substring(0, previous) + value.substring(textCursor));
                         textCursor = previous;
                     }
                 }
                 case GLFW.GLFW_KEY_DELETE -> {
-                    if (textCursor < value.length()) editingText.set(value.substring(0, textCursor) + value.substring(value.offsetByCodePoints(textCursor, 1)));
+                    if (selectAll) {
+                        editingText.set(""); textCursor = 0; selectAll = false;
+                    } else if (textCursor < value.length()) editingText.set(value.substring(0, textCursor) + value.substring(value.offsetByCodePoints(textCursor, 1)));
                 }
                 case GLFW.GLFW_KEY_V -> {
                     long window = mc().getWindow().handle();

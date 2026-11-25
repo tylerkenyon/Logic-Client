@@ -35,11 +35,13 @@ final class ProtectedWindow implements AutoCloseable {
 
     long handle() { return window; }
 
-    long nativeHandle() {
+    long nativeHandle() { return nativeHandle(window); }
+
+    long nativeHandle(long handle) {
         //? if <26.3 {
-        return GLFWNativeWin32.glfwGetWin32Window(window);
+        return GLFWNativeWin32.glfwGetWin32Window(handle);
         //?} else {
-        /*return SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, 0);
+        /*return SDL_GetPointerProperty(SDL_GetWindowProperties(handle), SDL_PROP_WINDOW_WIN32_HWND_POINTER, 0);
         *///?}
     }
 
@@ -50,7 +52,7 @@ final class ProtectedWindow implements AutoCloseable {
             try {
                 glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
                 glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-                glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
+                glfwWindowHint(GLFW_FLOATING, GLFW_FALSE);
                 glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
                 glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
                 glfwWindowHint(GLFW_MOUSE_PASSTHROUGH, GLFW_TRUE);
@@ -97,7 +99,7 @@ final class ProtectedWindow implements AutoCloseable {
                 }
             }
             window = SDL_CreateWindow("Mica overlay", 64, 64, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN
-                | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_TRANSPARENT);
+                | SDL_WINDOW_BORDERLESS | SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_TRANSPARENT);
             if (window == 0) throw sdlFailure("create protected overlay window");
             glContext = SDL_GL_CreateContext(window);
             if (glContext == 0) throw sdlFailure("create protected OpenGL context");
@@ -173,7 +175,7 @@ final class ProtectedWindow implements AutoCloseable {
         if (!host.isExclusiveFullscreen()) return true;
         if (!fullscreenChangeQueued) {
             fullscreenChangeQueued = true;
-            // Change the surface before the next frame, outside render submission.
+
             game.schedule(() -> {
                 fullscreenChangeQueued = false;
                 if (window == 0 || !game.isRunning() || !host.isExclusiveFullscreen()) return;

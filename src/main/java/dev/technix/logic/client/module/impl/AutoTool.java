@@ -72,7 +72,7 @@ public final class AutoTool extends Module {
             level = mc.level;
         }
         if (owner == null || level == null) return;
-        if (LogicClient.anchorBusy() || LogicClient.shieldBreakerBusy()) return;
+        if (LogicClient.anchorBusy() || LogicClient.keyPearlBusy() || LogicClient.shieldBreakerBusy()) return;
 
         Inventory inventory = owner.getInventory();
         if (managedSlot >= 0 && inventory.getSelectedSlot() != managedSlot) {

@@ -61,7 +61,7 @@ public final class ModuleManager {
         for (Module module : modules) {
             if (!(module instanceof ClickGui) && (mc.player == null || mc.gui.screen() != null)) continue;
             if (module.key() != GLFW.GLFW_KEY_UNKNOWN && module.key() == event.key()) {
-                module.toggle();
+                module.onKeybind();
                 if (module instanceof ClickGui gui && gui.open()) return;
             }
         }

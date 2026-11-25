@@ -41,6 +41,10 @@ public final class ConfigChecks {
             var lagRange = modules.register(new dev.technix.logic.client.module.impl.LagRange());
             var lagSettings = lagRange.settings().stream().collect(java.util.stream.Collectors.toMap(Setting::name, setting -> setting));
             var anchor = modules.register(new dev.technix.logic.client.module.impl.AnchorMacro());
+            var pearl = modules.register(new dev.technix.logic.client.module.impl.KeyPearl());
+            pearl.setKey(GLFW_KEY_P);
+            var pearlThrow = (RangeSetting) pearl.settings().stream().filter(setting -> setting.name().equals("Throw delay")).findFirst().orElseThrow();
+            pearlThrow.set(new RangeSetting.Value(70, 110));
             var anchorSettings = anchor.settings().stream().collect(java.util.stream.Collectors.toMap(Setting::name, setting -> setting));
             var autoTool = modules.register(new AutoTool());
             var autoArmor = modules.register(new dev.technix.logic.client.module.impl.AutoArmor());
@@ -76,7 +80,7 @@ public final class ConfigChecks {
             ((KeybindSetting) anchorSettings.get("Placement key")).set(GLFW_KEY_V);
             ((ModeSetting) anchorSettings.get("Placement inventory")).set("Temporary");
             ((ModeSetting) anchorSettings.get("Charging inventory")).set("Select slot");
-            ((RangeSetting) anchorSettings.get("Action interval")).set(new RangeSetting.Value(40, 80));
+            ((RangeSetting) anchorSettings.get("Placement delay")).set(new RangeSetting.Value(40, 80));
             require(!anchorSettings.get("Restore after placement").visible() && anchorSettings.get("Restore after charging").visible(),
                 "Show restoration toggles only for persistent slot selection");
             ((BooleanSetting) anchorSettings.get("Charge anchors")).set(false);
@@ -113,6 +117,13 @@ public final class ConfigChecks {
             config.save();
             require(!JsonParser.parseString(Files.readString(file)).getAsJsonObject().getAsJsonObject("modules").getAsJsonObject("Self Destruct").get("enabled").getAsBoolean(), "Never persist an armed one-shot unload action");
             unload.setEnabled(false);
+            JsonObject legacy = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+            JsonObject oldAnchor = legacy.getAsJsonObject("modules").getAsJsonObject("Anchor Macro").getAsJsonObject("settings");
+            oldAnchor.add("Action interval", oldAnchor.remove("Placement delay"));
+            oldAnchor.addProperty("Placement inventory", "Held item");
+            oldAnchor.remove("Charge delay");
+            oldAnchor.remove("Detonation delay");
+            Files.writeString(file, legacy.toString());
             for (var setting : sprintReset.settings()) {
                 if (setting instanceof NumberSetting number) number.set(number.min());
                 else if (setting instanceof BooleanSetting flag) flag.set(false);
@@ -129,9 +140,11 @@ public final class ConfigChecks {
             module.text.set("Changed");
             module.actionKey.set(GLFW_KEY_UNKNOWN);
             ((KeybindSetting) anchorSettings.get("Placement key")).set(GLFW_KEY_UNKNOWN);
-            ((ModeSetting) anchorSettings.get("Placement inventory")).set("Held item");
+            ((ModeSetting) anchorSettings.get("Placement inventory")).set("Select slot");
+            pearl.setKey(GLFW_KEY_UNKNOWN);
+            pearlThrow.set(new RangeSetting.Value(0, 0));
             ((BooleanSetting) anchorSettings.get("Charge anchors")).set(true);
-            ((RangeSetting) anchorSettings.get("Action interval")).set(new RangeSetting.Value(0, 0));
+            ((RangeSetting) anchorSettings.get("Placement delay")).set(new RangeSetting.Value(0, 0));
             ((NumberSetting) lagSettings.get("Packet delay")).set(0.0);
             ((NumberSetting) lagSettings.get("Range")).set(3.0);
             ((BooleanSetting) lagSettings.get("Show server position")).set(true);
@@ -150,6 +163,8 @@ public final class ConfigChecks {
             module.checks.set(java.util.List.of()); module.range.set(new RangeSetting.Value(0, 0));
             eagle.shiftInAir.set(false); eagle.mode.set("Autoalign"); playersOnly.set(false);
             new ConfigStore(file, modules, renderer, theme).load();
+            require(pearl.key() == GLFW_KEY_P && !pearl.enabled() && pearlThrow.low() == 70 && pearlThrow.high() == 110,
+                "Persist the KeyPearl action bind and timing without arming a throw on load");
             require(((MultiSelectSetting) armorSettings.get("Armor slots")).get().equals(java.util.List.of("Helmet", "Boots"))
                 && armorSettings.get("Minimum durability").get().equals(20.0)
                 && armorSettings.get("Inventory only").get().equals(false)
@@ -165,9 +180,12 @@ public final class ConfigChecks {
                 && anchorSettings.get("Placement key").get().equals(GLFW_KEY_V)
                 && anchorSettings.get("Placement inventory").get().equals("Temporary")
                 && !anchorSettings.get("Charging inventory").visible()
-                && ((RangeSetting) anchorSettings.get("Action interval")).low() == 40
-                && ((RangeSetting) anchorSettings.get("Action interval")).high() == 80,
+                && ((RangeSetting) anchorSettings.get("Placement delay")).low() == 40
+                && ((RangeSetting) anchorSettings.get("Placement delay")).high() == 80,
                 "Round-trip macro action bindings, switching modes, timing and hidden stage settings");
+            require(((RangeSetting) anchorSettings.get("Charge delay")).low() == 40
+                && ((RangeSetting) anchorSettings.get("Detonation delay")).high() == 80,
+                "Migrate the legacy action interval into the separate use delays");
             require(lagSettings.get("Packet delay").get().equals(240.0)
                 && lagSettings.get("Range").get().equals(7.5)
                 && lagSettings.get("Marker colour").get().equals("Amber")

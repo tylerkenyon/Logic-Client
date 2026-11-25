@@ -71,7 +71,7 @@ public final class AutoShieldBreaker extends Module {
                 timing.cancel(now, nanos(cooldown));
                 return;
             }
-            if (!CombatTargets.canAct(mc) || player.isHandsBusy() || LogicClient.anchorBusy()
+            if (!CombatTargets.canAct(mc) || player.isHandsBusy() || LogicClient.anchorBusy() || LogicClient.keyPearlBusy()
                     || LogicClient.MODULES.get(Blink.class).enabled()) {
                 if (timing.busy()) cancel(now);
                 return;
@@ -114,7 +114,7 @@ public final class AutoShieldBreaker extends Module {
     @Subscribe(priority = 150)
     private void tick(ClientTickEvent event) {
         if (!sameSession()) { clear(); return; }
-        if (timing.busy() && (!CombatTargets.canAct(mc()) || LogicClient.anchorBusy()
+        if (timing.busy() && (!CombatTargets.canAct(mc()) || LogicClient.anchorBusy() || LogicClient.keyPearlBusy()
                 || LogicClient.MODULES.get(Blink.class).enabled())) {
             try { cancel(System.nanoTime()); }
             catch (ReflectiveOperationException | RuntimeException failure) {

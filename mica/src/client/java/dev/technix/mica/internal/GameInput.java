@@ -3,7 +3,7 @@ package dev.technix.mica.internal;
 import com.mojang.blaze3d.platform.InputConstants;
 import org.lwjgl.glfw.GLFW;
 
-// Logic stores GLFW-style binding IDs in its config. Translate at the game boundary.
+
 public final class GameInput {
     private GameInput() {}
 
@@ -133,7 +133,7 @@ public final class GameInput {
                 TO_GAME.put(binding, key);
                 FROM_GAME.put(key, binding);
             } catch (IllegalArgumentException ignored) {
-                // A key absent from this game's registry cannot be bound.
+
             }
         }
     }

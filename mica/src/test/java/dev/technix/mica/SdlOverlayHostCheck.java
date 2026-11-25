@@ -10,7 +10,7 @@ import static org.lwjgl.sdl.SDLEvents.*;
 import static org.lwjgl.opengl.GL11.*;
 *///?}
 
-/** Exercises the production show/hide path with and without a host GL context. */
+
 public final class SdlOverlayHostCheck {
     public interface HitTest extends com.sun.jna.win32.StdCallLibrary {
         com.sun.jna.platform.win32.WinDef.HWND WindowFromPoint(com.sun.jna.platform.win32.WinDef.POINT.ByValue point);
@@ -59,9 +59,10 @@ public final class SdlOverlayHostCheck {
                 SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
                 SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
             }
-            long flags = SDL_WINDOW_HIDDEN | (openGl ? SDL_WINDOW_OPENGL : 0);
+            long flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_NOT_FOCUSABLE | (openGl ? SDL_WINDOW_OPENGL : 0);
             host = SDL_CreateWindow("Mica host regression test", 320, 240, flags);
             if (host == 0) throw new AssertionError("Cannot create host window");
+            if (!SDL_ShowWindow(host)) throw new AssertionError("Cannot show host window");
             if (openGl) {
                 context = SDL_GL_CreateContext(host);
                 if (context == 0 || !SDL_GL_MakeCurrent(host, context)) {

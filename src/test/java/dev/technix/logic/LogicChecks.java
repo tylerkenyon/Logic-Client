@@ -12,6 +12,8 @@ import dev.technix.logic.client.input.EdgePrediction;
 import dev.technix.logic.client.input.EagleAlignment;
 import dev.technix.logic.client.module.impl.Backtrack;
 import dev.technix.logic.client.module.impl.AnchorMacro;
+import dev.technix.logic.client.module.impl.ClickGui;
+import org.lwjgl.glfw.GLFW;
 import dev.technix.logic.client.module.impl.AnchorMacro.Stage;
 import dev.technix.logic.client.input.MovementKeys;
 import dev.technix.logic.client.setting.MultiSelectSetting;
@@ -501,6 +503,17 @@ public final class LogicChecks {
             && AnchorMacro.confirmed(Stage.PLACE, 0, true, 0),
             "Wait for the expected server block transition before advancing the macro");
         var macro = new AnchorMacro();
+        require(macro.settings().stream().filter(setting -> setting instanceof ModeSetting)
+                .map(setting -> (ModeSetting) setting).noneMatch(setting -> setting.options().contains("Held item")),
+            "Anchor stages always support automatic hotbar selection");
+        var pearl = new dev.technix.logic.client.module.impl.KeyPearl();
+        require(pearl.actionOnly() && pearl.bindable() && !pearl.enabled() && pearl.key() == GLFW.GLFW_KEY_UNKNOWN,
+            "KeyPearl is an unbound single-use action");
+        pearl.onKeybind();
+        pearl.onKeybind();
+        require(pearl.enabled(), "A second bind press leaves an active throw armed");
+        pearl.setEnabled(false);
+        require(!pearl.busy(), "Cancelling a pearl clears the action");
         require(macro.settings().stream().filter(setting -> setting.name().endsWith("inventory"))
             .allMatch(setting -> setting.get().equals("Temporary")), "Default inventory modes can complete the full sequence");
         var position = new net.minecraft.core.BlockPos(4, 5, 6);
@@ -511,6 +524,36 @@ public final class LogicChecks {
             "Track anchors replacing grass or fire at the clicked position");
         var bind = new dev.technix.logic.client.setting.KeybindSetting("Place", "");
         var gui = new dev.technix.logic.client.module.impl.ClickGui();
+        require(!AnchorMacro.delayElapsed(100, 5, 100, 5) && !AnchorMacro.delayElapsed(99, 6, 100, 5)
+                && AnchorMacro.delayElapsed(100, 6, 100, 5),
+            "A zero-delay anchor phase still waits for a new client tick and its time deadline");
+        var exact = new NumberSetting("Exact", "", 1, 0, 10, 0.1);
+        gui.editNumber(exact);
+        gui.handleCharacter('2');
+        gui.handleCharacter('.');
+        gui.handleCharacter('7');
+        require(exact.get() == 1, "Typing a number leaves the saved value unchanged until Enter");
+        gui.handleKey(GLFW.GLFW_KEY_ENTER, GLFW.GLFW_PRESS);
+        require(Math.abs(exact.get() - 2.7) < 1e-9 && !gui.isEditingNumber(exact), "Enter commits the replacement number");
+        gui.editNumber(exact);
+        gui.handleCharacter('9');
+        gui.handleKey(GLFW.GLFW_KEY_ESCAPE, GLFW.GLFW_PRESS);
+        require(Math.abs(exact.get() - 2.7) < 1e-9, "Escape cancels numeric entry");
+        gui.editNumber(exact);
+        gui.handleCharacter('-');
+        gui.handleKey(GLFW.GLFW_KEY_ENTER, GLFW.GLFW_PRESS);
+        require(gui.invalidNumber() && gui.isEditingNumber(exact) && Math.abs(exact.get() - 2.7) < 1e-9,
+            "Invalid input stays editable and preserves the setting");
+        var exactRange = new RangeSetting("Exact range", "", 10, 20, 0, 100, 1);
+        ClickGui.applyNumericValue(exactRange, "23, 71");
+        require(exactRange.low() == 23 && exactRange.high() == 71, "Enter both range endpoints");
+        ClickGui.applyNumericValue(exactRange, "42");
+        require(exactRange.low() == 42 && exactRange.high() == 42, "A single number sets a fixed range");
+        boolean nonfinite = false;
+        try { ClickGui.applyNumericValue(exactRange, "NaN, 5"); }
+        catch (IllegalArgumentException expected) { nonfinite = true; }
+        require(nonfinite && exactRange.low() == 42 && exactRange.high() == 42, "Reject non-finite ranges atomically");
+        gui.editText(null);
         gui.startBinding(bind);
         gui.handleKey(org.lwjgl.glfw.GLFW.GLFW_KEY_G, org.lwjgl.glfw.GLFW.GLFW_PRESS);
         require(bind.get() == org.lwjgl.glfw.GLFW.GLFW_KEY_G, "Capture keyboard action bindings");
