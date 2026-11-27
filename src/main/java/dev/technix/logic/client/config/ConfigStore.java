@@ -8,6 +8,7 @@ import dev.technix.logic.client.module.ModuleManager;
 import dev.technix.logic.client.module.impl.ClickGui;
 import dev.technix.logic.client.module.impl.Blink;
 import dev.technix.logic.client.setting.*;
+import org.lwjgl.glfw.GLFW;
 import java.nio.file.*;
 import java.io.IOException;
 
@@ -93,7 +94,7 @@ public final class ConfigStore {
                     }
                 }
                 try {
-                    if (state.has("key")) module.setKey(state.get("key").getAsInt());
+                    if (state.has("key")) module.setKey(readModuleKey(module.name(), state.get("key")));
                 } catch (RuntimeException failure) {
                     if (strict) throw failure;
                     Logic.LOGGER.warn("Ignoring invalid state for {}", module.name(), failure);
@@ -274,11 +275,7 @@ public final class ConfigStore {
             JsonObject state = stored.getAsJsonObject(module.name());
             JsonObject target = result.getAsJsonObject("modules").getAsJsonObject(module.name());
             if (state.has("key")) {
-                if (!state.get("key").isJsonPrimitive() || !state.get("key").getAsJsonPrimitive().isNumber())
-                    throw new IllegalArgumentException("Expected a numeric module binding");
-                int key = state.get("key").getAsBigDecimal().intValueExact();
-                if (key != -1 && (key < 32 || key > 348)) throw new IllegalArgumentException("Invalid module binding");
-                target.addProperty("key", key);
+                target.addProperty("key", readModuleKey(module.name(), state.get("key")));
             }
             if (state.has("enabled")) {
                 requireBoolean(state.get("enabled"));
@@ -294,6 +291,21 @@ public final class ConfigStore {
             }
         }
         return result;
+    }
+
+    private static int readModuleKey(String module, JsonElement value) {
+        String error = "Invalid module binding for " + module;
+        if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber())
+            throw new IllegalArgumentException(error);
+        int key;
+        try {
+            key = value.getAsBigDecimal().intValueExact();
+        } catch (ArithmeticException | NumberFormatException failure) {
+            throw new IllegalArgumentException(error, failure);
+        }
+        if (key == 0 || key == GLFW.GLFW_KEY_UNKNOWN) return GLFW.GLFW_KEY_UNKNOWN;
+        if (key < GLFW.GLFW_KEY_SPACE || key > GLFW.GLFW_KEY_LAST) throw new IllegalArgumentException(error);
+        return key;
     }
 
     private static void requireBoolean(JsonElement value) {

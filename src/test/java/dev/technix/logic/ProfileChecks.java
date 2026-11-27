@@ -11,6 +11,7 @@ import dev.technix.logic.client.module.Module;
 import dev.technix.logic.client.module.ModuleManager;
 import dev.technix.logic.client.module.impl.ClickGui;
 import dev.technix.logic.client.module.impl.KeyPearl;
+import dev.technix.logic.client.module.impl.Sprint;
 import dev.technix.logic.client.setting.BooleanSetting;
 import dev.technix.logic.client.setting.NumberSetting;
 import java.io.IOException;
@@ -40,6 +41,8 @@ public final class ProfileChecks {
         Feature second = modules.register(new Feature("Second"));
         first.peer = second;
         KeyPearl pearl = modules.register(new KeyPearl());
+        Sprint sprint = modules.register(new Sprint());
+        require(sprint.key() == -1, "Sprint defaults to the canonical unbound key");
         ClickGui gui = modules.register(new ClickGui());
         ClickGuiRenderer renderer = new ClickGuiRenderer(gui);
         UiTheme theme = new UiTheme();
@@ -106,11 +109,19 @@ public final class ProfileChecks {
             }
 
             JsonObject older = JsonParser.parseString("{\"modules\":{\"First\":{\"settings\":{\"Number\":3}}}}").getAsJsonObject();
-            ConfigStore.write(directory.resolve("configs/Older.json"), older, false);
+            JsonObject legacySprint = new JsonObject();
+            legacySprint.addProperty("key", 0);
+            older.getAsJsonObject("modules").add("Sprint", legacySprint);
+            Path olderFile = directory.resolve("configs/Older.json");
+            ConfigStore.write(olderFile, older, false);
             first.flag.set(false); first.setKey(80); first.setEnabled(true); second.flag.set(false);
             gui.editNumber(first.number);
             int stops = first.stops;
             profiles.load("Older");
+            require(sprint.key() == -1 && ConfigStore.read(olderFile).equals(older),
+                "Load Sprint's legacy zero binding as unbound while preserving the original named profile");
+            require(ConfigStore.read(store.file()).getAsJsonObject("modules").getAsJsonObject("Sprint")
+                .get("key").getAsInt() == -1, "Save the normalized Sprint binding to latest");
             require(first.flag.get() && first.number.get() == 3 && first.key() == -1 && !first.enabled() && second.flag.get(),
                 "Missing settings, bindings and module states return to registered defaults");
             require(first.stops > stops && gui.editingSetting() == null && gui.open(), "Switch resets module runtime state and numeric editing");

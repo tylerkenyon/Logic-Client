@@ -8,12 +8,13 @@ import dev.technix.logic.client.setting.BooleanSetting;
 import dev.technix.logic.event.Subscribe;
 import dev.technix.logic.event.impl.ClientTickEvent;
 import net.minecraft.client.Minecraft;
+import org.lwjgl.glfw.GLFW;
 
 public class Sprint extends Module {
     private final BooleanSetting onlyMoving = registerSetting(new BooleanSetting(
         "Only while moving", "Require a movement key to be held", true));
     public Sprint() {
-        super("Sprint", "Automatically sprints for you.", Category.MOVEMENT, 0, true);
+        super("Sprint", "Automatically sprints for you.", Category.MOVEMENT, GLFW.GLFW_KEY_UNKNOWN, true);
     }
 
     @Subscribe
