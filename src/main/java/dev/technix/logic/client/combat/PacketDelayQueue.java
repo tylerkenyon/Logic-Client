@@ -6,7 +6,7 @@ import java.util.List;
 
  
 public final class PacketDelayQueue<T> {
-    private record Entry<T>(T value, long arrival) { }
+    private record Entry<T>(T value, long arrival, long tick) { }
     private final ArrayDeque<Entry<T>> entries = new ArrayDeque<>();
     private final int capacity;
 
@@ -16,8 +16,12 @@ public final class PacketDelayQueue<T> {
     }
 
     public boolean offer(T value, long now) {
+        return offer(value, now, now);
+    }
+
+    public boolean offer(T value, long now, long tick) {
         if (entries.size() >= capacity) return false;
-        entries.addLast(new Entry<>(value, now));
+        entries.addLast(new Entry<>(value, now, tick));
         return true;
     }
 
@@ -32,8 +36,8 @@ public final class PacketDelayQueue<T> {
     public List<T> releaseSpan(long span) {
         List<T> result = new ArrayList<>();
         if (span <= 0 || entries.isEmpty()) return result;
-        long first = entries.getFirst().arrival();
-        while (!entries.isEmpty() && entries.getFirst().arrival() - first < span) {
+        long first = entries.getFirst().tick();
+        while (!entries.isEmpty() && entries.getFirst().tick() - first < span) {
             result.add(entries.removeFirst().value());
         }
         return result;
@@ -43,6 +47,14 @@ public final class PacketDelayQueue<T> {
         List<T> result = new ArrayList<>();
         while (!entries.isEmpty()) result.add(entries.removeFirst().value());
         return result;
+    }
+
+    public List<T> releaseThrough(long arrival) {
+        List<T> ready = new ArrayList<>();
+        while (!entries.isEmpty() && entries.getFirst().arrival() <= arrival) {
+            ready.add(entries.removeFirst().value());
+        }
+        return ready;
     }
 
     public void clear() { entries.clear(); }

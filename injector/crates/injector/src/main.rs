@@ -1,3 +1,4 @@
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
  
  
  
@@ -100,9 +101,14 @@ fn main() -> ExitCode {
 }
 
 fn real_main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(windows)]
+    if !args.is_empty() {
+        use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+        unsafe { AttachConsole(ATTACH_PARENT_PROCESS); }
+    }
     platform::enable_ansi();
     let _ = clock();
-    let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(error) = paths::initialize() {
         fail("storage", &error.to_string());
         return ExitCode::from(1);
@@ -165,7 +171,7 @@ fn parse_pid(text: &str) -> Option<u32> {
 
 fn run(pid: u32, dll: &Path) -> ExitCode {
     println!();
-    step("target", &format!("process {pid}"));
+    step("target", &format!("Minecraft process {pid}"));
     let dll = match dll.canonicalize() {
         Ok(p) => p,
         Err(e) => {
@@ -180,19 +186,16 @@ fn run(pid: u32, dll: &Path) -> ExitCode {
 
     let log_path = paths::native_log(pid);
     let logs = [log_path.clone(), dll.with_file_name("logic-native.log")];
+    step("log", &format!("Loader log: {}", log_path.display()));
     let starts = logs
         .each_ref()
         .map(|path| fs::metadata(path).map(|m| m.len()).unwrap_or(0));
 
-    step(
-        "checking",
-        "64-bit JVM, process access, library not already loaded",
-    );
-    step("injecting", "loading the native library into the JVM");
+    step("injecting", "Checking the game process and loading Logic…");
     match platform::inject(pid, &dll) {
         Ok(()) => ok(
-            "injected",
-            &format!("{} is loaded in the game process", platform::LIB_NAME),
+            "loaded",
+            "The library is loaded. Waiting for Logic to start…",
         ),
         Err(e) => {
             fail("failed", &e);
@@ -200,16 +203,12 @@ fn run(pid: u32, dll: &Path) -> ExitCode {
         }
     }
 
-    step(
-        "transforming",
-        "following the loader log (attach, class loader, hook transformer)...",
-    );
     match follow_log(&logs, starts) {
         Outcome::Done => {
             println!();
             ok(
                 "success",
-                "successfully injected - Logic is running in the game",
+                "Logic is ready. Press Right Shift in Minecraft.",
             );
             ExitCode::SUCCESS
         }

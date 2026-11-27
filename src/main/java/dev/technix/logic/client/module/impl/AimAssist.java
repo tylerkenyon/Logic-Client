@@ -1,15 +1,20 @@
 package dev.technix.logic.client.module.impl;
 
+import dev.technix.logic.client.LogicClient;
 import dev.technix.logic.client.combat.CombatMath;
 import dev.technix.logic.client.combat.CombatTargets;
+import dev.technix.logic.client.gui.GuiMotion;
 import dev.technix.logic.client.module.Category;
 import dev.technix.logic.client.module.Module;
+import dev.technix.logic.client.render.WorldProjection;
 import dev.technix.logic.client.setting.BooleanSetting;
 import dev.technix.logic.client.setting.NumberSetting;
 import dev.technix.logic.client.setting.ModeSetting;
 import dev.technix.logic.event.Subscribe;
 import dev.technix.logic.event.impl.ClientTickEvent;
 import dev.technix.logic.event.impl.FrameUpdateEvent;
+import dev.technix.logic.event.impl.Render2DEvent;
+import imgui.ImColor;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
@@ -28,6 +33,10 @@ public final class AimAssist extends Module {
         "Range", "Distance to lock on", 4, 1, 6, 0.1));
     private final NumberSetting fov = registerSetting(new NumberSetting(
         "Field of view", "target FOV", 60, 5, 180, 1));
+    private final BooleanSetting drawFov = registerSetting(new BooleanSetting(
+        "Draw FOV", "Show the aim field of view around the first-person crosshair", false));
+    private final BooleanSetting showOptimalPoint = registerSetting(new BooleanSetting(
+        "Show optimal point", "Show the active Optimal aim point inside the target hitbox", false));
     private final NumberSetting speed = registerSetting(new NumberSetting(
         "Turn speed", "Degrees per tick, smoothed between frames", 4, 0.5, 20, 0.5));
     private final NumberSetting horizontalSmoothing = registerSetting(new NumberSetting(
@@ -44,9 +53,13 @@ public final class AimAssist extends Module {
         "Ignore teammates", "skip players on your team", true));
 
     private LivingEntity target;
+    private record AimMarker(LivingEntity target, Vec3 point, double radius) {}
+    private AimMarker marker;
+    private float markerScale;
 
     public AimAssist() {
         super("Aim Assist", "locks on to enemies.", Category.COMBAT);
+        showOptimalPoint.visibleWhen(() -> targetBone.get().equals("Optimal"));
     }
 
     @Subscribe
@@ -77,7 +90,7 @@ public final class AimAssist extends Module {
 
     @Subscribe
     private void onFrame(FrameUpdateEvent event) {
-        if (dev.technix.logic.client.LogicClient.anchorBusy() || dev.technix.logic.client.LogicClient.keyPearlBusy()) return;
+        if (LogicClient.anchorBusy() || LogicClient.keyPearlBusy()) return;
         var mc = mc();
         if (!CombatTargets.canAct(mc) || (holdAttack.get() && !mc.options.keyAttack.isDown())
                 || !validTarget(target)) {
@@ -150,6 +163,10 @@ public final class AimAssist extends Module {
     private Vec3 targetDelta(LivingEntity candidate, float partialTick) {
         AABB box = targetBox(candidate, partialTick);
         Vec3 eye = mc().player.getEyePosition(partialTick);
+        return targetPoint(candidate, box, eye).subtract(eye);
+    }
+
+    private Vec3 targetPoint(LivingEntity candidate, AABB box, Vec3 eye) {
         double targetY = switch (targetBone.get()) {
             case "Head" -> box.minY + candidate.getEyeHeight();
             case "Pelvis" -> box.minY + (box.maxY - box.minY) * 0.45;
@@ -160,7 +177,69 @@ public final class AimAssist extends Module {
             case "Optimal" -> optimalAimPoint(box, eye);
             default -> new Vec3((box.minX + box.maxX) * 0.5, targetY, (box.minZ + box.maxZ) * 0.5);
         };
-        return offsetPoint(box, point, horizontalMidpoint.get(), verticalMidpoint.get(), mc().player.getYRot()).subtract(eye);
+        return offsetPoint(box, point, horizontalMidpoint.get(), verticalMidpoint.get(), mc().player.getYRot());
+    }
+
+    @Subscribe
+    private void onRender(Render2DEvent event) {
+        var mc = mc();
+        var frame = WorldProjection.current();
+        if (mc.player == null || mc.level == null || frame == null || frame.level() != mc.level
+                || mc.getCameraEntity() != mc.player || mc.gui.screen() != null
+                || LogicClient.MODULES.get(ClickGui.class).open()) {
+            clearMarker();
+            return;
+        }
+
+        var context = event.context();
+        var draw = context.drawList();
+        float focalLength = frame.focalLength(context.width(), context.height());
+        boolean light = LogicClient.MODULES.get(InterfaceModule.class).light();
+        if (drawFov.get() && mc.options.getCameraType().isFirstPerson()) {
+            float x = context.width() * 0.5f, y = context.height() * 0.5f;
+            double radius = focalLength * Math.tan(Math.toRadians(fov.get() * 0.5));
+            if (radius >= 1 && radius <= Math.hypot(x, y) + 2) {
+                draw.addCircle(x, y, (float) radius, ImColor.rgba(0, 0, 0, 105), 0, 2.5f);
+                draw.addCircle(x, y, (float) radius, LogicClient.THEME.color(light, "accent", 0.65f), 0, 1f);
+            }
+        }
+
+        if (!showOptimalPoint.get() || !targetBone.get().equals("Optimal")
+                || (marker != null && marker.target().level() != frame.level())) {
+            clearMarker();
+            return;
+        }
+        boolean active = CombatTargets.canAct(mc) && !LogicClient.anchorBusy() && !LogicClient.keyPearlBusy()
+            && (!holdAttack.get() || mc.options.keyAttack.isDown()) && validTarget(target);
+        if (active) {
+            AABB box = targetBox(target, frame.partialTick());
+            Vec3 point = targetPoint(target, box, mc.player.getEyePosition(frame.partialTick()));
+            double radius = Math.min(Math.min(point.x - box.minX, box.maxX - point.x),
+                Math.min(Math.min(point.y - box.minY, box.maxY - point.y),
+                    Math.min(point.z - box.minZ, box.maxZ - point.z)));
+            if (marker == null || marker.target() != target) markerScale = 0;
+            marker = new AimMarker(target, point, radius);
+        }
+        markerScale = GuiMotion.smooth(markerScale, active ? 1 : 0, 26, context.deltaTime());
+        if (markerScale == 0 || marker == null) {
+            clearMarker();
+            return;
+        }
+
+        var clip = frame.clip(marker.point());
+        if (clip.w <= 0.05f || !clip.isFinite() || Math.abs(clip.x) > clip.w || Math.abs(clip.y) > clip.w) return;
+        float x = (1 + clip.x / clip.w) * context.width() * 0.5f;
+        float y = (1 - clip.y / clip.w) * context.height() * 0.5f;
+        float radius = (float) Math.min(12, marker.radius() * focalLength / clip.w) * markerScale;
+        if (radius < 1) return;
+        float stroke = Math.min(1.2f, radius * 0.35f);
+        draw.addCircleFilled(x, y, radius, ImColor.rgba(0, 0, 0, Math.round(88 * markerScale)));
+        draw.addCircle(x, y, radius - stroke, LogicClient.THEME.color(light, "accent", markerScale), 0, stroke);
+    }
+
+    private void clearMarker() {
+        marker = null;
+        markerScale = 0;
     }
 
     public static Vec3 optimalAimPoint(AABB box, Vec3 eye) {
@@ -234,5 +313,6 @@ public final class AimAssist extends Module {
     @Override
     protected void onDisable() {
         target = null;
+        clearMarker();
     }
 }

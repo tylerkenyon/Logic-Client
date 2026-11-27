@@ -189,6 +189,7 @@ public final class LogicClient implements ClientModInitializer {
         if (!running()) return;
         instance.anchorMacro.beforeKeybinds();
         instance.keyPearl.beforeKeybinds();
+        MODULES.get(Backtrack.class).beforeKeybinds();
         MODULES.get(Triggerbot.class).beginKeybinds();
         MODULES.get(AutoShieldBreaker.class).beforeKeybinds();
     }
@@ -223,6 +224,7 @@ public final class LogicClient implements ClientModInitializer {
     public static void attackDispatched() {
         if (!running()) return;
         var client = instance;
+        MODULES.get(Backtrack.class).attackDispatched();
         if (client.triggerbotClick) {
             client.triggerbotClick = false;
             MODULES.get(Triggerbot.class).recordAutomaticAttack();
@@ -235,6 +237,7 @@ public final class LogicClient implements ClientModInitializer {
     public static void afterKeybinds() {
         if (!running()) return;
         instance.triggerbotClick = false;
+        MODULES.get(Backtrack.class).afterKeybinds();
         MODULES.get(SprintReset.class).afterKeybinds();
     }
 
@@ -302,7 +305,8 @@ public final class LogicClient implements ClientModInitializer {
     }
 
     public static boolean blockAttack() {
-        return running() && (anchorBusy() || keyPearlBusy() || MODULES.get(AntiAction.class).blocksAttack());
+        return running() && (anchorBusy() || keyPearlBusy() || MODULES.get(AntiAction.class).blocksAttack()
+            || MODULES.get(Backtrack.class).blocksAttack());
     }
 
     public static boolean interceptCommonPacket(Packet<?> packet, ClientCommonPacketListenerImpl listener) {

@@ -31,7 +31,16 @@ fn download(client: &reqwest::blocking::Client, url: &str, limit: u64) -> Result
     Ok(data)
 }
 
-pub fn check() -> Result<bool, String> {
+struct Release {
+    exe: std::path::PathBuf,
+    client: reqwest::blocking::Client,
+    local: Metadata,
+    remote: Metadata,
+    base: String,
+    data: Vec<u8>,
+}
+
+fn available_release() -> Result<Option<Release>, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     if !exe.file_name().is_some_and(|name| name.eq_ignore_ascii_case("LogicLauncher.exe")) {
         return Err("the launcher must be named LogicLauncher.exe to update".into());
@@ -39,7 +48,7 @@ pub fn check() -> Result<bool, String> {
     let dir = exe.parent().ok_or("launcher directory missing")?;
     let local: Metadata = match fs::read(dir.join("meta.json")) {
         Ok(data) => serde_json::from_slice(&data).map_err(|e| format!("invalid local metadata: {e}"))?,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Err("release metadata is missing".into()),
         Err(e) => return Err(e.to_string()),
     };
     if local.schema != 1 || !repository_valid(&local.repository) { return Err("invalid local repository metadata".into()); }
@@ -49,7 +58,19 @@ pub fn check() -> Result<bool, String> {
     let data = download(&client, &format!("{base}/latest/download/meta.json"), 64 * 1024)?;
     let remote: Metadata = serde_json::from_slice(&data).map_err(|e| format!("invalid release metadata: {e}"))?;
     if remote.schema != 1 || remote.repository != local.repository { return Err("release metadata does not match repository".into()); }
-    if remote.version <= local.version { return Ok(false); }
+    if remote.version <= local.version { return Ok(None); }
+    Ok(Some(Release { exe, client, local, remote, base, data }))
+}
+
+pub fn available_version() -> Result<Option<Version>, String> {
+    Ok(available_release()?.map(|release| release.remote.version))
+}
+
+pub fn check() -> Result<bool, String> {
+    let Some(Release { exe, client, local, remote, base, data }) = available_release()? else {
+        return Ok(false);
+    };
+    let dir = exe.parent().ok_or("launcher directory missing")?;
     loop {
         print!("Logic {} is available (installed {}). Would you like to update? [y/n] ", remote.version, local.version);
         io::stdout().flush().map_err(|e| e.to_string())?;

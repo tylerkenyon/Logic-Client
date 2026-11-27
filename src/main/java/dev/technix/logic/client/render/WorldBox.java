@@ -54,4 +54,16 @@ public final class WorldBox {
 
     private static float x(Vector4f point, RenderContext context) { return (point.x / point.w + 1) * context.width() / 2; }
     private static float y(Vector4f point, RenderContext context) { return (1 - point.y / point.w) * context.height() / 2; }
+
+    public static void line(RenderContext context, WorldProjection.Frame frame, Vec3 start, Vec3 end,
+                            String color, float thickness) {
+        Vec3 from = start.subtract(frame.camera()), to = end.subtract(frame.camera());
+        Vector4f a = frame.matrix().transform(new Vector4f((float) from.x, (float) from.y, (float) from.z, 1));
+        Vector4f b = frame.matrix().transform(new Vector4f((float) to.x, (float) to.y, (float) to.z, 1));
+        if (a.w < 0.05f && b.w < 0.05f) return;
+        if (a.w < 0.05f) a.lerp(b, (0.05f - a.w) / (b.w - a.w));
+        else if (b.w < 0.05f) b.lerp(a, (0.05f - b.w) / (a.w - b.w));
+        context.drawList().addLine(x(a, context), y(a, context), x(b, context), y(b, context),
+            tint(color, 230), thickness);
+    }
 }

@@ -78,8 +78,9 @@ public final class Triggerbot extends Module {
         double reach = Math.min(range.get(), mc.player.entityInteractionRange());
         var eye = mc.player.getEyePosition();
         var end = eye.add(mc.player.getViewVector(1).scale(reach));
-        var intersection = target.getBoundingBox().clip(eye, end);
-        return (target.getBoundingBox().contains(eye) || intersection.isPresent())
+        var box = LogicClient.MODULES.get(Backtrack.class).attackBox(target);
+        var intersection = box.clip(eye, end);
+        return (box.contains(eye) || intersection.isPresent())
             && eye.distanceToSqr(hit.getLocation()) <= reach * reach ? target : null;
     }
     @Override protected void onDisable() { observedTarget = null; readyAt = 0; }

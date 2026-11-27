@@ -228,6 +228,15 @@ public final class LogicChecks {
         batches.offer("a", 2); batches.offer("b", 2); batches.offer("c", 3); batches.offer("d", 5);
         require(batches.releaseSpan(2).equals(java.util.List.of("a", "b", "c"))
             && batches.drain().equals(java.util.List.of("d")), "Partial release preserves complete tick groups and packet order");
+        var sequencedBatches = new PacketDelayQueue<String>(4);
+        sequencedBatches.offer("first move", 10, 2);
+        sequencedBatches.offer("same tick", 11, 2);
+        sequencedBatches.offer("next tick", 12, 3);
+        sequencedBatches.offer("future tick", 13, 5);
+        require(sequencedBatches.releaseSpan(2).equals(java.util.List.of("first move", "same tick", "next tick"))
+                && sequencedBatches.releaseThrough(12).isEmpty()
+                && sequencedBatches.releaseThrough(13).equals(java.util.List.of("future tick")),
+            "Hitbox partial release uses complete client ticks while attack release uses packet sequence");
         PacketDelayQueue<String> packets = new PacketDelayQueue<>(2);
         require(packets.offer("move1", 0) && packets.offer("move2", 50), "Queue movement in arrival order");
         require(!packets.offer("overflow", 60), "Bound the retained packet count");
@@ -241,6 +250,53 @@ public final class LogicChecks {
         packets.offer("first", 0);
         packets.offer("second", 5);
         require(packets.release(20, 10).equals(java.util.List.of("first", "second")), "Replay multiple expired packets in FIFO order");
+        var historicalPackets = new PacketDelayQueue<String>(4);
+        historicalPackets.offer("before move", 1);
+        historicalPackets.offer("selected move", 2);
+        historicalPackets.offer("future move", 3);
+        require(historicalPackets.releaseThrough(2).equals(java.util.List.of("before move", "selected move"))
+                && historicalPackets.size() == 1 && historicalPackets.releaseThrough(2).isEmpty()
+                && historicalPackets.drain().equals(java.util.List.of("future move")),
+            "Historical attacks release the selected FIFO prefix once and retain future packets");
+        var hitboxHistory = new dev.technix.logic.client.combat.BacktrackHistory();
+        AABB firstHistoryBox = new AABB(-0.3, 0, 2.7, 0.3, 1.8, 3.3);
+        hitboxHistory.add(0, new Vec3(0, 0, 3), firstHistoryBox);
+        hitboxHistory.add(2, new Vec3(1, 0, 3), firstHistoryBox.move(1, 0, 0));
+        hitboxHistory.add(3, new Vec3(2, 0, 3), firstHistoryBox.move(2, 0, 0));
+        AABB alignedLatest = firstHistoryBox.move(1, 0, 1);
+        Vec3 historyEye = new Vec3(1, 1, 0);
+        Vec3 historyAim = new Vec3(1, 1, 4);
+        var pickedHistory = hitboxHistory.select(historyEye, historyAim, alignedLatest);
+        require(pickedHistory != null && pickedHistory.sample().sequence() == 2,
+            "Aiming along the breadcrumb selects its recorded hitbox");
+        require(hitboxHistory.select(historyEye, historyAim, firstHistoryBox.move(2, 0, 0)) == null,
+            "A historical box alone cannot authorize an attack");
+        require(hitboxHistory.select(historyEye, new Vec3(1, 1, 3), alignedLatest) == null,
+            "An obstacle or reach limit between the breadcrumb and latest box prevents selection");
+        close(hitboxHistory.length(), 2, "Bound the entire traveled breadcrumb path");
+        hitboxHistory.releaseThrough(2);
+        require(hitboxHistory.samples().size() == 2 && hitboxHistory.samples().getFirst().sequence() == 2,
+            "Keep the selected point as the new trail origin after partial release");
+        close(hitboxHistory.length(), 1, "Released history no longer counts toward Max blocks");
+        hitboxHistory.releaseThrough(100);
+        require(hitboxHistory.samples().size() == 1 && hitboxHistory.samples().getFirst().sequence() == 3,
+            "Automatic partial release retains the latest reached position as the breadcrumb origin");
+        close(hitboxHistory.length(), 0, "Fully released movement has no retained path length");
+        hitboxHistory.clear();
+        require(hitboxHistory.samples().isEmpty() && hitboxHistory.length() == 0,
+            "Discard historical selection across session and mode changes");
+        var historyMode = new Backtrack();
+        var historyModeSetting = (ModeSetting) historyMode.settings().stream().filter(setting -> setting.name().equals("Mode")).findFirst().orElseThrow();
+        historyModeSetting.set("Hitbox");
+        require(historyMode.settings().stream().anyMatch(setting -> setting.name().equals("Max blocks") && setting.visible())
+                && historyMode.settings().stream().anyMatch(setting -> setting.name().equals("Partial release") && setting.visible())
+                && historyMode.settings().stream().anyMatch(setting -> setting.name().equals("Release distance") && setting.visible())
+                && historyMode.settings().stream().noneMatch(setting -> setting.name().equals("Disable on hit") && setting.visible()),
+            "Hitbox shares Freeze's release controls and knockback behavior");
+        ((BooleanSetting) historyMode.settings().stream().filter(setting -> setting.name().equals("Partial release")).findFirst().orElseThrow()).set(true);
+        require(historyMode.settings().stream().anyMatch(setting -> setting.name().equals("Release amount") && setting.visible())
+                && historyMode.settings().stream().anyMatch(setting -> setting.name().equals("Release interval") && setting.visible()),
+            "Hitbox exposes Freeze's partial release timing when enabled");
 
         UseRateGate placement = new UseRateGate();
         require(placement.tryUse(0, 20, 150_000_000), "Allow the initial physical placement without duplicating it");

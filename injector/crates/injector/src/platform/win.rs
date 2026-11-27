@@ -225,6 +225,37 @@ fn module_loaded(pid: u32, file_name: &str) -> bool {
     }
 }
 
+pub fn is_injected(pid: u32) -> bool {
+    if !module_loaded(pid, super::LIB_NAME) {
+        return false;
+    }
+    std::fs::read_to_string(crate::paths::native_log(pid))
+        .is_ok_and(|log| injection_ready(&log))
+}
+
+fn injection_ready(log: &str) -> bool {
+    log.lines()
+        .rev()
+        .filter_map(|line| line.split_once("] ").map(|(_, message)| message))
+        .find(|message| {
+            message.starts_with("worker started, pid ")
+                || message.starts_with("FAILED:")
+                || message.starts_with("[java] released, unloading")
+                || message.starts_with("[java] client initialised:")
+        })
+        .is_some_and(|message| message.starts_with("[java] client initialised: Logic ready;"))
+}
+
+#[cfg(test)]
+#[test]
+fn ignores_stale_injection_markers() {
+    let ready = "[1] [java] client initialised: Logic ready; Mica already active";
+    assert!(injection_ready(&format!("{ready}\n[2] bootstrap returned")));
+    assert!(!injection_ready(&format!("{ready}\n[2] worker started, pid 12")));
+    assert!(!injection_ready(&format!("{ready}\n[2] [java] released, unloading the loader")));
+    assert!(!injection_ready("[1] [java] client initialised: Logic is already running as a Fabric mod"));
+}
+
  
 pub fn inject(pid: u32, dll: &Path) -> Result<(), String> {
     unsafe {
